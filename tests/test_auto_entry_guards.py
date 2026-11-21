@@ -17,7 +17,7 @@ def test_auto_entry_disables_at_two_percent_daily_equity_loss(monkeypatch):
     async def fake_paper_request(method, path, params=None, body=None):
         calls.append((method, path, params, body))
         if path == "/v2/account":
-            return {"equity": "98.00"}
+            return {"equity": "98.00", "buying_power": "100.00"}
         raise AssertionError(f"Unexpected broker request: {method} {path}")
 
     monkeypatch.setattr(main, "_paper_request", fake_paper_request)
