@@ -8,6 +8,7 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - Latest BTC/USD trade endpoint.
 - Historical 5-minute crypto bars endpoint.
 - Experimental EMA(9)/EMA(21) trend filter and ATR(14) volatility diagnostic.
+- Read-only historical backtest endpoint for a long-only EMA/ATR strategy.
 - Automated execution is OFF. No order-submission endpoint exists.
 
 ## Safety
@@ -29,5 +30,15 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - GET /api/market/btc
 - GET /api/market/bars?timeframe=5Min&limit=100
 - GET /api/signal?timeframe=5Min
+- GET /api/backtest?timeframe=5Min&limit=2000&starting_equity=100&notional_usd=10
 
 This build is read-only. It cannot place, modify, or cancel orders.
+
+
+## Backtest assumptions
+- Long-only entries: EMA(9) > EMA(21) and candle close > EMA(9); entry at the next candle open.
+- Stop loss: 1.5 x ATR(14). Take profit: 2.0 x ATR(14).
+- Default position notional: USD 10; default starting equity: USD 100.
+- Estimated fee assumption: 0.25% per side. This is a modelling assumption, not a verified Alpaca fee quote.
+- If a candle touches both stop and target, the simulator assumes the stop is hit first.
+- Backtest output is historical simulation only and is not a forecast or proof of profitability.
