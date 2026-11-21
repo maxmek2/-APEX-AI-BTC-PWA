@@ -2,14 +2,14 @@
 
 Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca paper-account backend.
 
-## Current build: 0.4
+## Current build: 0.5
 - iPhone-friendly installable PWA shell.
 - Alpaca paper account equity and buying power endpoint.
 - Latest BTC/USD trade endpoint.
 - Historical crypto bars endpoint returns the newest requested candles in chronological order (oldest to newest), with latest candle timestamp and close included.
 - Experimental EMA(9)/EMA(21) trend filter and ATR(14) volatility diagnostic.
 - Read-only historical backtest endpoint for a long-only EMA/ATR strategy.
-- Automated execution is OFF. No order-submission endpoint exists.
+- Paper execution safety status endpoint and risk-bounded BTC trade preview endpoint (preview only; no order is submitted).\n- Automated execution and order submission remain OFF.
 
 ## Safety
 - Use Alpaca PAPER credentials only.
@@ -30,9 +30,9 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - GET /api/market/btc
 - GET /api/market/bars?timeframe=5Min&limit=100 (newest candles, returned chronologically)
 - GET /api/signal?timeframe=5Min
-- GET /api/backtest?timeframe=5Min&limit=2000&starting_equity=100&notional_usd=10
+- GET /api/backtest?timeframe=5Min&limit=2000&starting_equity=100&notional_usd=10\n- GET /api/paper/status\n- POST /api/paper/preview (JSON: timeframe, risk_percent, max_notional_usd, stop_atr_multiple, reward_risk)
 
-This build is read-only. It cannot place, modify, or cancel orders.
+This build remains non-executing: it cannot place, modify, or cancel orders. The preview endpoint only calculates a proposed setup and risk-bounded notional.
 
 
 ## Backtest assumptions
@@ -52,4 +52,4 @@ This build is read-only. It cannot place, modify, or cancel orders.
 - Rule-alignment score and optional read-only historical backtest report.
 - Daily realized P&L, win rate, and drawdown remain unavailable until verified fill-history accounting is implemented; the UI intentionally does not fabricate them.
 - Pause Monitor, Stop Monitor, and View Report control dashboard monitoring/report display only. They do not pause or stop a trading bot.
-- Automated execution remains OFF. No order-submission endpoint is implemented.
+- Automated execution remains OFF. No order-submission endpoint is implemented.\n- Alpaca crypto supports only simple order class in the current order-class matrix; bracket/OCO protective exits are not available for BTC crypto. This build therefore blocks order submission until a verified server-side exit manager is implemented. See https://docs.alpaca.markets/us/docs/orders-at-alpaca and https://docs.alpaca.markets/us/reference/getallordersforaccount.
