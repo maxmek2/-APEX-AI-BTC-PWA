@@ -1171,3 +1171,83 @@ async def auto_entry_dry_run():
         "exit_manager_state_changed": False,
         "safety": "Read-only preflight. Uses market/account reads only; no order submission."
     }
+
+
+# Stage 5: read-only Paper operations validation.
+# This endpoint reconciles broker-visible state but deliberately performs GETs only.
+@app.get("/api/paper/validation")
+async def paper_validation_report():
+    if not _paper_only_configured():
+        raise HTTPException(403, "Only the exact Alpaca Paper API host is allowed")
+
+    account = await _paper_request("GET", "/v2/account")
+    positions = await _paper_request("GET", "/v2/positions")
+    open_orders = await _paper_request("GET", "/v2/orders", {"status": "open", "limit": 100})
+    btc_positions = [
+        item for item in positions
+        if str(item.get("symbol", "")).replace("/", "").upper() == "BTCUSD"
+    ]
+    btc_orders = [
+        item for item in open_orders
+        if str(item.get("symbol", "")).replace("/", "").upper() == "BTCUSD"
+    ]
+
+    equity = float(account.get("equity") or 0)
+    checks = [
+        {"check": "paper_host_verified", "passed": _paper_only_configured()},
+        {"check": "paper_account_active", "passed": str(account.get("status", "")).lower() == "active"},
+        {"check": "positive_equity", "passed": equity > 0},
+        {"check": "auto_entry_off", "passed": not bool(_auto_entry.get("enabled"))},
+        {"check": "exit_manager_disarmed", "passed": not bool(_exit_manager.get("armed"))},
+        {"check": "no_open_btc_orders", "passed": len(btc_orders) == 0},
+        {"check": "no_open_btc_positions", "passed": len(btc_positions) == 0},
+    ]
+    passed = sum(1 for item in checks if item["passed"])
+    return {
+        "stage": 5,
+        "mode": "PAPER_READ_ONLY_VALIDATION",
+        "result": "CLEAN" if passed == len(checks) else "REQUIRES_REVIEW",
+        "checks_passed": passed,
+        "checks_total": len(checks),
+        "checks": checks,
+        "account": {
+            "status": account.get("status"),
+            "currency": account.get("currency"),
+            "equity": account.get("equity"),
+            "buying_power": account.get("buying_power"),
+        },
+        "btc_open_positions": len(btc_positions),
+        "btc_open_orders": len(btc_orders),
+        "auto_entry_enabled": bool(_auto_entry.get("enabled")),
+        "exit_manager_armed": bool(_exit_manager.get("armed")),
+        "broker_write_api_called": False,
+        "order_submitted": False,
+        "note": "Read-only snapshot only. A clean report is not proof of successful fills, protective exits, restart recovery, or profitability."
+    }
+
+
+# Stage 6: readiness assessment only. No live broker adapter or live order route exists.
+@app.get("/api/live/readiness")
+async def live_trading_readiness():
+    gates = [
+        {"gate": "strategy_validation", "passed": False, "detail": "Stage 4 strategy validation remains open; current tested strategy results are not profitable."},
+        {"gate": "paper_lifecycle_evidence", "passed": False, "detail": "Controlled Paper entry/fill/partial-fill/rejection/exit/restart evidence is not complete."},
+        {"gate": "exchange_native_protection", "passed": False, "detail": "This integration does not provide verified exchange-native BTC protective orders."},
+        {"gate": "live_broker_adapter", "passed": False, "detail": "No live broker adapter or live order submission endpoint is implemented."},
+        {"gate": "production_security_and_monitoring", "passed": False, "detail": "Production identity, secret rotation, alerting, and operational controls require independent review."},
+        {"gate": "explicit_live_authorization", "passed": False, "detail": "No explicit authorization to enable real-money execution has been given."},
+    ]
+    return {
+        "stage": 6,
+        "mode": "READINESS_ASSESSMENT_ONLY",
+        "live_trading_supported": False,
+        "live_orders_enabled": False,
+        "result": "NOT_READY",
+        "gates_passed": sum(1 for item in gates if item["passed"]),
+        "gates_total": len(gates),
+        "gates": gates,
+        "paper_auto_entry_enabled": bool(_auto_entry.get("enabled")),
+        "paper_exit_manager_armed": bool(_exit_manager.get("armed")),
+        "order_submitted": False,
+        "note": "This endpoint is informational and never connects to a live broker or submits orders."
+    }
