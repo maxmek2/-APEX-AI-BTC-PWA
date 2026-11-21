@@ -69,7 +69,8 @@ async function runStage6Readiness(){
  try{
   const data=await get("/live/readiness");
   const gates=(data.gates||[]).map(g=>'<div class="check-row"><span>'+g.gate.replaceAll("_"," ")+'<small>'+g.detail+'</small></span><strong class="'+(g.passed?"check-pass":"check-fail")+'">'+(g.passed?"PASS":"BLOCKED")+'</strong></div>').join("");
-  out.innerHTML='<strong class="check-fail">'+data.result+' · '+data.gates_passed+'/'+data.gates_total+' gates passed</strong>'+gates+'<small class="muted">Live supported: NO · Live orders enabled: NO · No broker order call.</small>';
+  const actions=(data.next_actions||[]).map((item,index)=>'<li>'+item+'</li>').join("");
+  out.innerHTML='<strong class="check-fail">'+data.result+' · '+data.gates_passed+'/'+data.gates_total+' gates passed · '+data.readiness_percent+'% </strong>'+gates+'<strong>Next steps</strong><ol>'+actions+'</ol><small class="muted">Assessment only · Live supported: NO · Live orders enabled: NO · Broker API called: NO · No order submitted.</small>';
  }catch(e){out.textContent="Stage 6 assessment unavailable: "+e.message;}
  finally{btn.disabled=false;}
 }
