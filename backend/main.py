@@ -35,6 +35,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Protect every Paper-control/status route with a server-side bearer token.
+# No secret is embedded in the public PWA bundle. Missing server configuration fails closed.
+import secrets
+from starlette.responses import JSONResponse
+
+@app.middleware("http")
+async def protect_paper_api(request, call_next):
+    if request.url.path.startswith("/api/paper/") and request.method != "OPTIONS":
+        expected = os.getenv("APEX_API_TOKEN", "").strip()
+        if not expected:
+            return JSONResponse(status_code=503, content={"detail": "Paper API locked: configure APEX_API_TOKEN on the backend"})
+        supplied = request.headers.get("authorization", "")
+        scheme, _, token = supplied.partition(" ")
+        if scheme.lower() != "bearer" or not token or not secrets.compare_digest(token, expected):
+            return JSONResponse(status_code=401, content={"detail": "Valid Bearer token required"})
+    return await call_next(request)
+
 async def get_json(url:str,params:dict[str,Any]|None=None):
     if not KEY or not SECRET:
         raise HTTPException(503,"Alpaca paper credentials are not configured on the server")
@@ -473,6 +490,10 @@ async def _exit_manager_tick():
 
         qty = float(btc.get("qty") or 0)
         entry = float(btc.get("avg_entry_price") or 0)
+        if str(btc.get("side", "")).lower() != "long":
+            _exit_manager["last_event"] = "BLOCKED_NON_LONG_POSITION"
+            _exit_manager["armed"] = False
+            return
         if qty <= 0 or entry <= 0:
             _exit_manager["last_event"] = "INVALID_POSITION_DATA"
             return
@@ -504,9 +525,18 @@ async def _exit_manager_tick():
         latest = trade.get("trades", {}).get("BTC/USD")
         price = float(latest.get("p")) if latest and latest.get("p") is not None else 0
         _exit_manager["last_price"] = price or None
-        _exit_manager["last_check"] = datetime.now(timezone.utc).isoformat()
+        checked_at = datetime.now(timezone.utc)
+        _exit_manager["last_check"] = checked_at.isoformat()
         if price <= 0:
             _exit_manager["last_event"] = "WAITING_FOR_VALID_MARKET_PRICE"
+            return
+        try:
+            trade_time = datetime.fromisoformat(str(latest.get("t")).replace("Z", "+00:00"))
+            trade_age = (checked_at - trade_time).total_seconds()
+        except (TypeError, ValueError):
+            trade_age = float("inf")
+        if trade_age < -30 or trade_age > 30:
+            _exit_manager["last_event"] = "BLOCKED_STALE_OR_FUTURE_MARKET_TRADE"
             return
 
         stop = float(_exit_manager.get("stop_price") or 0)
@@ -530,7 +560,14 @@ async def _exit_manager_tick():
             try:
                 result = await _paper_request("DELETE", "/v2/positions/BTCUSD")
                 _exit_manager["close_order_id"] = result.get("id")
-                _exit_manager["last_event"] = reason + "_CLOSE_REQUEST_ACCEPTED"
+                # Acceptance is not proof of a flat position. Reconcile broker state.
+                remaining = await _paper_request("GET", "/v2/positions")
+                still_open = next((p for p in remaining
+                    if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
+                if still_open:
+                    _exit_manager["last_event"] = reason + "_CLOSE_ACCEPTED_POSITION_STILL_OPEN_REQUIRES_INSPECTION"
+                else:
+                    _exit_manager["last_event"] = reason + "_POSITION_CLOSED_CONFIRMED"
             except Exception:
                 _exit_manager["last_event"] = reason + "_CLOSE_REQUEST_FAILED_INSPECT_BROKER"
                 raise
@@ -754,6 +791,13 @@ async def _auto_entry_tick():
             positions = await _paper_request("GET", "/v2/positions")
             btc = next((p for p in positions if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
             if btc:
+                # Fail closed on partial fills or residual entry orders. Do not
+                # manage a position while an entry order may still be filling.
+                pending_orders = await _paper_request("GET", "/v2/orders", {"status": "open", "limit": 100})
+                if any(str(o.get("symbol", "")).replace("/", "").upper() == "BTCUSD" for o in pending_orders):
+                    _auto_entry["last_event"] = "PARTIAL_FILL_OR_OPEN_ORDER_REQUIRES_RECONCILIATION"
+                    _auto_entry["enabled"] = False
+                    return
                 if not _exit_manager["armed"]:
                     _exit_manager.update({
                         "armed": True, "position_key": None, "entry_price": None,
