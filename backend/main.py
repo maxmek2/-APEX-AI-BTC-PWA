@@ -446,6 +446,58 @@ async def paper_trade_preview(request: PaperPreviewRequest):
 # It is PAPER-only, starts DISARMED, and only manages an already-open BTC long.
 # It never opens positions. Arming is an explicit API action after deployment.
 import asyncio
+import json
+import sqlite3
+from pathlib import Path
+
+STATE_DB_PATH = os.getenv("APEX_STATE_DB", "/var/data/apex_state.sqlite3")
+
+def _state_connection():
+    path = Path(STATE_DB_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(path), timeout=5)
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS runtime_state (state_key TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL)"
+    )
+    return connection
+
+def _persist_runtime_state():
+    # Store operational context, but always restart with execution disarmed.
+    auto_state = {k: v for k, v in _auto_entry.items() if k != "enabled"}
+    exit_state = {k: v for k, v in _exit_manager.items() if k != "armed"}
+    now = datetime.now(timezone.utc).isoformat()
+    with _state_connection() as connection:
+        connection.execute(
+            "INSERT INTO runtime_state(state_key,payload,updated_at) VALUES(?,?,?) ON CONFLICT(state_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
+            ("auto_entry", json.dumps(auto_state), now),
+        )
+        connection.execute(
+            "INSERT INTO runtime_state(state_key,payload,updated_at) VALUES(?,?,?) ON CONFLICT(state_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
+            ("exit_manager", json.dumps(exit_state), now),
+        )
+
+def _restore_runtime_state():
+    try:
+        with _state_connection() as connection:
+            rows = dict(connection.execute("SELECT state_key,payload FROM runtime_state").fetchall())
+        saved_auto = json.loads(rows.get("auto_entry", "{}"))
+        saved_exit = json.loads(rows.get("exit_manager", "{}"))
+        for key, value in saved_auto.items():
+            if key in _auto_entry and key != "enabled":
+                _auto_entry[key] = value
+        for key, value in saved_exit.items():
+            if key in _exit_manager and key != "armed":
+                _exit_manager[key] = value
+        _auto_entry["enabled"] = False
+        _exit_manager["armed"] = False
+        if saved_auto or saved_exit:
+            _auto_entry["last_event"] = "RESTART_RECOVERY_REQUIRED_EXECUTION_FORCED_OFF"
+            _exit_manager["last_event"] = "RESTART_RECOVERY_REQUIRED_EXECUTION_DISARMED"
+    except Exception as exc:
+        _auto_entry["enabled"] = False
+        _exit_manager["armed"] = False
+        _auto_entry["last_event"] = "STATE_RESTORE_FAILED_EXECUTION_FORCED_OFF: " + str(exc)[:100]
+        _exit_manager["last_event"] = "STATE_RESTORE_FAILED_EXECUTION_DISARMED"
 
 _exit_manager = {
     "armed": False,
@@ -581,14 +633,20 @@ async def _exit_manager_loop():
             raise
         except Exception as exc:
             _exit_manager["last_event"] = "ERROR: " + str(exc)[:180]
+        finally:
+            try:
+                _persist_runtime_state()
+            except Exception as exc:
+                _exit_manager["last_event"] = "STATE_PERSISTENCE_ERROR: " + str(exc)[:120]
+                _auto_entry["enabled"] = False
+                _exit_manager["armed"] = False
         await asyncio.sleep(5)
 
 @app.on_event("startup")
 async def start_exit_manager():
     global _exit_task
-    # After a process restart, in-memory protection state is lost. Detect an
-    # existing BTC position and expose a loud recovery warning; never silently
-    # claim it is protected or auto-close it without operator review.
+    _restore_runtime_state()
+    # A restart never re-arms execution. Restored state is informational only.
     if _paper_only_configured() and KEY and SECRET:
         try:
             positions = await _paper_request("GET", "/v2/positions")
