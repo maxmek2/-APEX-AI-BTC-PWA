@@ -978,11 +978,12 @@ async def simulate_paper_trade_lifecycle(request: PaperLifecycleSimulationReques
 
 
 # Paper-only automatic entry controller. It is OFF after every server restart.
-# Daily trade count is unlimited; risk, exposure, cooldown and daily-loss guards remain.
+# A five-trade daily cap is enforced alongside risk, exposure, cooldown and loss guards.
 _auto_entry = {
     "enabled": False, "mode": "paper", "timeframe": "5Min",
     "risk_fraction": 0.01, "max_notional_usd": 10.0,
     "max_equity_fraction": 0.10, "daily_loss_limit_fraction": 1.0,
+    "max_trades_per_day": 5,
     "cooldown_seconds": 900, "day_key": None, "day_start_equity": None,
     "last_entry_attempt": None, "last_signal_bar": None,
     "last_event": "DISABLED", "last_order_id": None,
@@ -1009,6 +1010,9 @@ async def _auto_entry_tick():
             day_start = float(_auto_entry.get("day_start_equity") or equity)
             if equity <= day_start * (1 - _auto_entry["daily_loss_limit_fraction"]):
                 _auto_entry.update({"enabled": False, "last_event": "AUTO_DISABLED_DAILY_LOSS_LIMIT"})
+                return
+            if int(_auto_entry.get("trades_today", 0)) >= int(_auto_entry["max_trades_per_day"]):
+                _auto_entry["last_event"] = "DAILY_TRADE_LIMIT_REACHED"
                 return
 
             positions = await _paper_request("GET", "/v2/positions")
@@ -1115,7 +1119,7 @@ async def auto_entry_status():
     return {
         **_auto_entry,
         "mode": "paper" if _paper_only_configured() else "blocked",
-        "daily_trade_count_limit": None,
+        "daily_trade_count_limit": _auto_entry["max_trades_per_day"],
         "one_open_btc_position_max": True,
         "order_submission_enabled": bool(_auto_entry["enabled"] and _paper_only_configured()),
         "warning": "Paper-only. Auto Entry is OFF by default and resets OFF after server restart. Software-polled exits are not guaranteed exchange-native protection."
@@ -1212,7 +1216,9 @@ async def auto_entry_dry_run():
     daily_loss_ok = True
     if daily_loss_known and equity > 0:
         daily_loss_ok = equity > float(daily_baseline) * (1 - _auto_entry["daily_loss_limit_fraction"])
-    add_check("daily_loss_guard", daily_loss_ok, "Within 2% daily loss limit" if daily_loss_known else "Baseline not initialized while Auto Entry is OFF; will initialize on enable")
+    add_check("daily_loss_guard", daily_loss_ok, "Within 100% daily loss limit" if daily_loss_known else "Baseline not initialized while Auto Entry is OFF; will initialize on enable")
+    add_check("daily_trade_limit", int(_auto_entry.get("trades_today", 0)) < int(_auto_entry["max_trades_per_day"]),
+              f'{_auto_entry.get("trades_today", 0)}/{_auto_entry["max_trades_per_day"]} trades used today')
 
     stop_distance = volatility * 1.5
     stop_price = ask - stop_distance if ask > 0 and volatility > 0 else 0
