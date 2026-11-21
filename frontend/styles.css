@@ -156,3 +156,96 @@
   .chart { height: 220px; }
   .main-grid { grid-template-columns: minmax(0, 35%) minmax(0, 65%); }
 }
+
+
+/* v19: portrait iPhone layout — readable cards, full-width chart */
+@media (max-width: 600px) {
+  .app { width:100%; max-width:100%; padding:12px 10px 28px; gap:10px; }
+  .brandbar { gap:8px; min-height:58px; }
+  .brand { gap:8px; }
+  .brand-mark { width:46px; height:46px; font-size:38px; }
+  .brand-name { font-size:19px; }
+  .brand-sub { font-size:11px; }
+  .cloud-status { max-width:none; padding:7px 10px; gap:7px; }
+  .cloud-status strong { font-size:10px; }
+  .cloud-status small { font-size:8px; }
+  .gear { flex:0 0 34px; width:34px; height:34px; font-size:20px; }
+  .tabs { overflow-x:auto; scrollbar-width:none; gap:5px; padding-bottom:2px; }
+  .tabs::-webkit-scrollbar { display:none; }
+  .tabs a { flex:0 0 auto; min-width:68px; padding:10px 9px; font-size:10px; }
+  .ticker { padding:10px; gap:8px; }
+  .coin { width:34px; height:34px; font-size:23px; flex:0 0 34px; }
+  .ticker-name { min-width:75px; }
+  .ticker-name strong { font-size:15px; }
+  .ticker-name small { font-size:9px; }
+  .ticker-price strong { font-size:18px; }
+  .ticker-price small { font-size:8px; }
+  .time-select select { padding:7px 5px; font-size:10px; }
+  .main-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
+  .side-column { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .content-column { display:grid; grid-template-columns:minmax(0,1fr); gap:9px; }
+  .panel { padding:11px; border-radius:13px; }
+  .section-head { gap:7px; padding-bottom:8px; }
+  .section-head strong { font-size:13px; }
+  .section-head small { font-size:9px; }
+  .symbol-icon,.robot-icon { font-size:20px; }
+  .equity-label { font-size:11px; margin-top:9px; }
+  .equity-value { font-size:25px; margin:0 0 7px 8px; }
+  .account-row,.setting-row { font-size:9px; padding:7px 0; }
+  .account-row b,.setting-row b { font-size:9px; }
+  .account-panel > .muted { display:none; }
+  .auto-state { margin:9px 0; padding:8px; }
+  .auto-state strong { font-size:10px; }
+  .auto-state b { font-size:9px; }
+  .toggle-off { font-size:18px; }
+  .control-panel .setting-row { padding:6px 0; }
+  .safety-note { font-size:9px; line-height:1.45; }
+  .chart-panel { padding:11px; }
+  .chart-title strong { font-size:15px; }
+  .chart-title small { font-size:10px; }
+  .chart-live { font-size:9px; }
+  .chart { height:clamp(235px,68vw,310px); margin-top:9px; }
+  .chart-legend { gap:9px; font-size:9px; padding-top:8px; }
+  .chart-legend i { width:13px; }
+  .signal-strip { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+  .mini-stat { padding:9px; gap:8px; border-radius:10px; }
+  .mini-stat>span { font-size:20px; }
+  .mini-stat small { font-size:9px; }
+  .mini-stat b { font-size:11px; }
+  .positions-panel h2,.signal-panel h2 { font-size:14px; margin-bottom:8px; }
+  .tag { font-size:9px; padding:5px 8px; }
+  .position-row { padding:10px 0; font-size:10px; }
+  .position-row small { font-size:9px; }
+  .position-main strong { font-size:11px; }
+  .side-tag { font-size:8px; }
+  .empty-state,.signal-panel p,.signal-panel small { font-size:10px; }
+  .signal-panel h3 { font-size:23px; margin:10px 0 5px; }
+  .lower-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .progress-content { gap:9px; }
+  .progress-ring { width:62px; height:62px; border-width:6px; }
+  .progress-ring strong { font-size:14px; }
+  .progress-ring small { font-size:8px; }
+  .summary-cells { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; }
+  .summary-cells>div { padding:5px; border-right:0; border-bottom:1px solid var(--line); gap:5px; }
+  .summary-cells small { font-size:8px; }
+  .summary-cells b { font-size:13px; }
+  .progress-content p,.summary-panel p { font-size:9px; }
+  .score-heading strong { font-size:28px; }
+  .check-row,.mtf-row { font-size:10px; padding:9px 0; }
+  .mtf-row small { font-size:9px; }
+  .small-action { font-size:9px; padding:8px; }
+  .backtest-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .backtest-grid small { font-size:9px; }
+  .backtest-grid b { font-size:13px; }
+  .action-bar { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+  .action-bar button { font-size:10px; padding:12px 5px; }
+  .dashboard-footer { font-size:9px; }
+}
+@media (max-width: 360px) {
+  .app { padding-left:7px; padding-right:7px; }
+  .cloud-status { max-width:145px; }
+  .cloud-status strong { font-size:9px; }
+  .ticker-name { min-width:62px; }
+  .ticker-price strong { font-size:16px; }
+  .side-column { grid-template-columns:1fr; }
+}
