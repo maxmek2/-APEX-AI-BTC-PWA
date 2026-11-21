@@ -367,8 +367,8 @@ async def paper_execution_status():
     return {
         "mode": "paper" if _paper_only_configured() else "blocked",
         "paper_host_verified": _paper_only_configured(),
-        "auto_enabled": False,
-        "order_submission_enabled": False,
+        "auto_enabled": bool(_auto_entry.get("enabled", False)) if "_auto_entry" in globals() else False,
+        "order_submission_enabled": bool(_auto_entry.get("enabled", False)) if "_auto_entry" in globals() else False,
         "protective_exit_support": False,
         "reason": "BTC crypto bracket/OCO exits are not supported by the current Alpaca crypto order-class matrix; execution stays disabled until a verified protective-exit manager exists.",
         "symbol": "BTC/USD"
