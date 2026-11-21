@@ -66,3 +66,66 @@
  .brand-name{font-size:15px}
  .cloud-status{max-width:145px}
 }
+
+
+/* v17: closer match to the supplied APEX reference on iPhone portrait */
+@media (max-width: 760px) {
+  .app { padding: 9px 8px 22px; gap: 8px; }
+  .brandbar { min-height: 54px; }
+  .brand-mark { width: 46px; height: 46px; font-size: 38px; }
+  .brand-name { font-size: 18px; }
+  .brand-sub { font-size: 11px; }
+  .cloud-status { max-width: 190px; padding: 7px 9px; }
+  .cloud-status strong { font-size: 10px; }
+  .cloud-status small { font-size: 8px; }
+  .tabs { gap: 4px; }
+  .tabs a { padding: 9px 3px; font-size: 9px; }
+  .ticker { padding: 9px; gap: 7px; }
+  .ticker-name strong { font-size: 14px; }
+  .ticker-name small { font-size: 8px; }
+  .ticker-price strong { font-size: 16px; }
+  .ticker-price small { font-size: 7px; }
+  .main-grid { grid-template-columns: minmax(0, 36%) minmax(0, 64%); gap: 7px; }
+  .panel { padding: 9px; border-radius: 12px; }
+  .section-head strong { font-size: 12px; }
+  .section-head small { font-size: 9px; }
+  .equity-label { font-size: 10px; }
+  .equity-value { font-size: 23px; }
+  .account-row, .setting-row { font-size: 9px; padding: 7px 0; }
+  .account-row b, .setting-row b { font-size: 9px; }
+  .auto-state { padding: 8px; }
+  .auto-state strong { font-size: 10px; }
+  .auto-state b { font-size: 9px; }
+  .safety-note { font-size: 9px; line-height: 1.45; }
+  .chart-panel { padding: 9px; }
+  .chart-title strong { font-size: 12px; }
+  .chart-title small { font-size: 9px; }
+  .chart-live { font-size: 9px; }
+  .chart { height: clamp(230px, 34vw, 300px); margin-top: 8px; }
+  .chart-legend { gap: 8px; font-size: 8px; padding-top: 7px; }
+  .chart-legend i { width: 12px; }
+  .mini-stat { padding: 7px; gap: 6px; }
+  .mini-stat > span { font-size: 16px; }
+  .mini-stat small { font-size: 8px; }
+  .mini-stat b { font-size: 9px; }
+  .positions-panel h2, .signal-panel h2 { font-size: 11px; }
+  .tag { font-size: 8px; }
+  .position-row { padding: 8px 0; font-size: 9px; }
+  .position-row small { font-size: 8px; }
+  .empty-state, .signal-panel p, .signal-panel small { font-size: 9px; }
+  .signal-panel h3 { font-size: 19px; }
+  .lower-grid { gap: 7px; }
+  .progress-content { gap: 8px; }
+  .progress-ring { width: 58px; height: 58px; }
+  .progress-ring strong { font-size: 13px; }
+  .progress-ring small { font-size: 8px; }
+  .summary-cells small { font-size: 8px; }
+  .summary-cells b { font-size: 11px; }
+  .progress-content p, .summary-panel p { font-size: 9px; }
+  .action-bar { gap: 6px; }
+  .action-bar button { font-size: 10px; padding: 11px 4px; }
+}
+@media (max-width: 390px) {
+  .chart { height: 205px; }
+  .ticker-price strong { font-size: 14px; }
+}
