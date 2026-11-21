@@ -784,6 +784,14 @@ async def _auto_entry_tick():
             quote_data = await get_json(f"{DATA}/v1beta3/crypto/us/latest/quotes", {"symbols": "BTC/USD"})
             quote = quote_data.get("quotes", {}).get("BTC/USD", {})
             reference_price = float(quote.get("ap") or 0)
+            quote_time = quote.get("t")
+            try:
+                quote_age = (datetime.now(timezone.utc) - datetime.fromisoformat(str(quote_time).replace("Z", "+00:00"))).total_seconds()
+            except (TypeError, ValueError):
+                quote_age = float("inf")
+            if quote_age < -30 or quote_age > 30:
+                _auto_entry["last_event"] = "BLOCKED_STALE_OR_MISSING_QUOTE"
+                return
             if reference_price <= 0:
                 trade_data = await get_json(f"{DATA}/v1beta3/crypto/us/latest/trades", {"symbols": "BTC/USD"})
                 reference_price = float(trade_data.get("trades", {}).get("BTC/USD", {}).get("p") or 0)
@@ -876,6 +884,14 @@ async def auto_entry_dry_run():
     quote_data = await get_json(f"{DATA}/v1beta3/crypto/us/latest/quotes", {"symbols": "BTC/USD"})
     quote = quote_data.get("quotes", {}).get("BTC/USD", {})
     ask = float(quote.get("ap") or 0)
+    quote_time = quote.get("t")
+    quote_fresh = False
+    quote_age = None
+    try:
+        quote_age = (datetime.now(timezone.utc) - datetime.fromisoformat(str(quote_time).replace("Z", "+00:00"))).total_seconds()
+        quote_fresh = -30 <= quote_age <= 30
+    except (TypeError, ValueError):
+        pass
     volatility = float(signal_data.get("atr_14") or 0)
 
     checks = []
@@ -889,6 +905,7 @@ async def auto_entry_dry_run():
     add_check("no_existing_btc_order", btc_order is None, "No open BTC order" if btc_order is None else "Open BTC order already exists")
     add_check("long_signal", signal_data.get("signal") == "LONG_SETUP", f"Signal: {signal_data.get('signal', 'UNKNOWN')}")
     add_check("valid_ask", ask > 0, f"Latest ask USD {ask:.2f}")
+    add_check("fresh_quote", quote_fresh, f"Quote age {quote_age:.1f}s" if quote_age is not None else "Missing or invalid quote timestamp")
     add_check("valid_atr", volatility > 0, f"ATR(14) USD {volatility:.2f}")
 
     bar_time = signal_data.get("last_bar_time")
