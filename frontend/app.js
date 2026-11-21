@@ -62,3 +62,30 @@ function setupControls(){
 }
 setupControls();if("serviceWorker"in navigator)addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
 refresh().catch(e=>setStatus("Dashboard error: "+e.message));refreshTimer=setInterval(()=>refresh().catch(e=>setStatus(e.message)),30000);
+
+
+async function loadPaperEngineStatus(){
+ const state=$("paper-engine-state"),note=$("paper-engine-note");
+ if(!state)return;
+ try{
+  const s=await get("/paper/status");
+  state.textContent=s.order_submission_enabled?"EXECUTION AVAILABLE":"PREVIEW ONLY · LOCKED";
+  if(note)note.textContent=s.reason||"Paper-only execution safety status.";
+ }catch(e){state.textContent="STATUS UNAVAILABLE";if(note)note.textContent=e.message;}
+}
+async function previewPaperTrade(){
+ const out=$("paper-preview-result"),btn=$("paper-preview");
+ if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Checking paper account, open positions, signal and risk limits…";
+ try{
+  const response=await fetch(API+"/paper/preview",{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({timeframe:selectedTimeframe,risk_percent:0.5,max_notional_usd:10,stop_atr_multiple:1.5,reward_risk:2})});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.detail||"HTTP "+response.status);
+  if(!data.approved){out.textContent="NO TRADE · "+data.signal+" · "+data.reason;return;}
+  out.innerHTML='<div class="backtest-grid"><div><small>Reference entry</small><b>'+money(data.reference_entry_price)+'</b></div><div><small>Proposed size</small><b>'+money(data.proposed_notional_usd)+'</b></div><div><small>Risk budget</small><b>'+money(data.risk_budget_usd)+'</b></div><div><small>ATR stop</small><b>'+money(data.proposed_stop_price)+'</b></div><div><small>Target reference</small><b>'+money(data.proposed_take_profit_price)+'</b></div><div><small>Execution</small><b>NOT SENT</b></div></div><small class="muted">Preview only · '+data.timeframe+' · '+data.signal+' · '+data.warning+'</small>';
+ }catch(e){out.textContent="Preview unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+const paperPreviewButton=$("paper-preview");
+if(paperPreviewButton)paperPreviewButton.addEventListener("click",previewPaperTrade);
+loadPaperEngineStatus();
