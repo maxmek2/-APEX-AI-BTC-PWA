@@ -1,10 +1,10 @@
-const CACHE="apex-btc-shell-v3";
-const FILES=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest"];
+const CACHE="apex-btc-shell-v4";
+const APP_SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest"];
 
 self.addEventListener("install",event=>{
   event.waitUntil(
     caches.open(CACHE)
-      .then(cache=>cache.addAll(FILES))
+      .then(cache=>cache.addAll(APP_SHELL))
       .then(()=>self.skipWaiting())
   );
 });
@@ -18,10 +18,30 @@ self.addEventListener("activate",event=>{
 });
 
 self.addEventListener("fetch",event=>{
-  const url=new URL(event.request.url);
-  if(url.pathname.includes("/api/"))return;
-  if(event.request.method!=="GET")return;
+  const request=event.request;
+  const url=new URL(request.url);
+  if(url.pathname.includes("/api/")||request.method!=="GET")return;
+
+  // Always try the network first for HTML and JavaScript so deployed fixes
+  // are not hidden by an older installed PWA cache.
+  const isAppCode=url.pathname.endsWith(".js")||
+    url.pathname.endsWith(".html")||
+    url.pathname==="/" ;
+
+  if(isAppCode){
+    event.respondWith(
+      fetch(request).then(response=>{
+        if(response.ok){
+          const copy=response.clone();
+          caches.open(CACHE).then(cache=>cache.put(request,copy));
+        }
+        return response;
+      }).catch(()=>caches.match(request))
+    );
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then(cached=>cached||fetch(event.request))
+    caches.match(request).then(cached=>cached||fetch(request))
   );
 });
