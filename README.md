@@ -1,21 +1,33 @@
 # APEX AI BTC PWA
 
-Mobile-first BTC/USD scalping dashboard connected to the user's Alpaca paper account.
+Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca paper-account backend.
 
-## Safety defaults
-- Paper account only.
-- Automated execution is OFF.
-- No order-submission endpoint in the initial build.
-- Never store API credentials in frontend code or commit secrets to Git.
+## Current build: 0.2
+- iPhone-friendly installable PWA shell.
+- Alpaca paper account equity and buying power endpoint.
+- Latest BTC/USD trade endpoint.
+- Historical 5-minute crypto bars endpoint.
+- Experimental EMA(9)/EMA(21) trend filter and ATR(14) volatility diagnostic.
+- Automated execution is OFF. No order-submission endpoint exists.
 
-## Project structure
-- frontend/: installable Progressive Web App.
-- backend/: FastAPI service for secure Alpaca paper-account and market-data reads.
+## Safety
+- Use Alpaca PAPER credentials only.
+- Keep credentials in backend environment variables; never commit .env.
+- Do not expose credentials to frontend JavaScript.
+- Signals are experimental and not backtested or financial advice.
+- BTC/USD spot trading is long-only on this paper integration; SHORT_SETUP is informational only.
 
-## Backend setup
-1. Copy backend/.env.example to backend/.env.
-2. Add Alpaca PAPER API credentials to backend/.env.
-3. Install dependencies: pip install -r backend/requirements.txt
-4. Run: uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000
+## Backend
+1. Copy backend/.env.example to backend/.env and enter Alpaca PAPER API credentials.
+2. Install: pip install -r backend/requirements.txt
+3. Run: uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000
+4. Configure HTTPS hosting/reverse proxy so frontend /api requests reach the backend.
 
-Serve frontend over HTTPS or localhost. Configure the API reverse proxy so /api routes to the backend.
+## API
+- GET /health
+- GET /api/account
+- GET /api/market/btc
+- GET /api/market/bars?timeframe=5Min&limit=100
+- GET /api/signal?timeframe=5Min
+
+This build is read-only. It cannot place, modify, or cancel orders.
