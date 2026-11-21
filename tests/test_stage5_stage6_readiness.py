@@ -93,9 +93,9 @@ def test_stage6_readiness_reports_gates_and_remains_hard_locked():
 
 
 def test_stage6_blocks_when_paper_execution_controls_are_not_safe(monkeypatch):
-    monkeypatch.setitem(main._auto_entry, "enabled", True)
-    monkeypatch.setitem(main._exit_manager, "armed", False)
     with TestClient(main.app) as client:
+        monkeypatch.setitem(main._auto_entry, "enabled", True)
+        monkeypatch.setitem(main._exit_manager, "armed", False)
         response = client.get("/api/live/readiness")
 
     assert response.status_code == 200
@@ -144,13 +144,15 @@ def test_stage5_validation_flags_open_btc_order(monkeypatch):
     assert checks["no_open_btc_orders"] is False
 
 
-def test_stage5_lifecycle_simulation_covers_stop_and_take_profit_without_broker_calls():
+def test_stage5_lifecycle_simulation_covers_stop_and_take_profit_without_broker_calls(monkeypatch):
+    monkeypatch.setenv("APEX_API_TOKEN", "stage5-test-token")
     with TestClient(main.app) as client:
-        stop = client.post("/api/paper/lifecycle/simulate", json={
+        headers = {"Authorization": "Bearer stage5-test-token"}
+        stop = client.post("/api/paper/lifecycle/simulate", headers=headers, json={
             "entry_price": 100000, "atr_14": 1000,
             "simulated_prices": [100100, 98500], "notional_usd": 10,
         })
-        target = client.post("/api/paper/lifecycle/simulate", json={
+        target = client.post("/api/paper/lifecycle/simulate", headers=headers, json={
             "entry_price": 100000, "atr_14": 1000,
             "simulated_prices": [101000, 103000], "notional_usd": 10,
         })
