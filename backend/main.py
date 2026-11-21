@@ -52,7 +52,10 @@ async def protect_paper_api(request, call_next):
         scheme, _, token = supplied.partition(" ")
         if scheme.lower() != "bearer" or not token or not secrets.compare_digest(token, expected):
             return JSONResponse(status_code=401, content={"detail": "Valid Bearer token required"})
-    return await call_next(request)
+    response = await call_next(request)
+    if requires_token:
+        response.headers["Cache-Control"] = "no-store, private"
+    return response
 
 async def get_json(url:str,params:dict[str,Any]|None=None):
     if not KEY or not SECRET:
