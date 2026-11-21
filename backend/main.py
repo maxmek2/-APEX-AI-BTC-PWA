@@ -1229,25 +1229,48 @@ async def paper_validation_report():
 # Stage 6: readiness assessment only. No live broker adapter or live order route exists.
 @app.get("/api/live/readiness")
 async def live_trading_readiness():
+    """Stage 6 is an assessment only; this route cannot enable or submit live orders."""
+    auto_entry_enabled = bool(_auto_entry.get("enabled"))
+    exit_manager_armed = bool(_exit_manager.get("armed"))
+    controls_safe = not auto_entry_enabled and not exit_manager_armed
     gates = [
-        {"gate": "strategy_validation", "passed": False, "detail": "Stage 4 strategy validation remains open; current tested strategy results are not profitable."},
-        {"gate": "paper_lifecycle_evidence", "passed": False, "detail": "Controlled Paper entry/fill/partial-fill/rejection/exit/restart evidence is not complete."},
-        {"gate": "exchange_native_protection", "passed": False, "detail": "This integration does not provide verified exchange-native BTC protective orders."},
-        {"gate": "live_broker_adapter", "passed": False, "detail": "No live broker adapter or live order submission endpoint is implemented."},
-        {"gate": "production_security_and_monitoring", "passed": False, "detail": "Production identity, secret rotation, alerting, and operational controls require independent review."},
-        {"gate": "explicit_live_authorization", "passed": False, "detail": "No explicit authorization to enable real-money execution has been given."},
+        {"gate": "paper_execution_controls_safe", "passed": controls_safe,
+         "detail": "Auto Entry is OFF and Exit Manager is DISARMED." if controls_safe else
+                   "Disable Paper Auto Entry and disarm the Exit Manager before continuing verification."},
+        {"gate": "strategy_validation", "passed": False,
+         "detail": "Stage 4 strategy validation remains open; the currently tested strategy is not profitable."},
+        {"gate": "paper_lifecycle_evidence", "passed": False,
+         "detail": "Controlled Paper entry, fill, partial-fill, rejection, exit and restart evidence is incomplete."},
+        {"gate": "exchange_native_protection", "passed": False,
+         "detail": "Verified exchange-native BTC protective orders are not available in this integration."},
+        {"gate": "live_broker_adapter", "passed": False,
+         "detail": "No live broker adapter or live order submission endpoint is implemented."},
+        {"gate": "production_security_and_monitoring", "passed": False,
+         "detail": "Production identity, secret rotation, alerting and operational controls require independent review."},
+        {"gate": "explicit_live_authorization", "passed": False,
+         "detail": "Real-money execution has not been explicitly authorized."},
     ]
+    passed = sum(1 for item in gates if item["passed"])
     return {
         "stage": 6,
         "mode": "READINESS_ASSESSMENT_ONLY",
         "live_trading_supported": False,
         "live_orders_enabled": False,
         "result": "NOT_READY",
-        "gates_passed": sum(1 for item in gates if item["passed"]),
+        "readiness_percent": round(passed / len(gates) * 100),
+        "gates_passed": passed,
         "gates_total": len(gates),
         "gates": gates,
-        "paper_auto_entry_enabled": bool(_auto_entry.get("enabled")),
-        "paper_exit_manager_armed": bool(_exit_manager.get("armed")),
+        "next_actions": [
+            "Keep Auto Entry OFF and Exit Manager DISARMED.",
+            "Complete Stage 4 strategy validation with robust out-of-sample results.",
+            "Collect controlled Paper lifecycle and restart-recovery evidence.",
+            "Review exchange-native protection, production security and monitoring.",
+            "Reassess authorization only after every technical gate is independently verified."
+        ],
+        "paper_auto_entry_enabled": auto_entry_enabled,
+        "paper_exit_manager_armed": exit_manager_armed,
+        "broker_api_called": False,
         "order_submitted": False,
-        "note": "This endpoint is informational and never connects to a live broker or submits orders."
+        "note": "Assessment only. This endpoint makes no broker API calls, cannot enable execution, and never submits orders."
     }
