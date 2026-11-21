@@ -13,11 +13,24 @@ DATA=os.getenv("ALPACA_DATA_URL","https://data.alpaca.markets").rstrip("/")
 HEADERS={"APCA-API-KEY-ID":KEY,"APCA-API-SECRET-KEY":SECRET}
 
 app=FastAPI(title="APEX AI BTC API",version="0.2.0")
+
+# Normalize configured origins (spaces/trailing slashes can silently break CORS).
+configured_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+# Explicitly allow the deployed dashboard origin; keep localhost for local development.
+allowed_origins = list(dict.fromkeys([
+    "https://apex-ai-btc-dashboard.onrender.com",
+    "http://localhost:5500",
+    *configured_origins,
+]))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS","http://localhost:5500").split(","),
+    allow_origins=allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "OPTIONS"],
     allow_headers=["*"],
 )
 
