@@ -255,12 +255,20 @@ def _backtest_exit_for_candle(position: dict, candle: dict) -> tuple[float, str]
 
 
 def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
-                         notional_usd: float = 10.0, fee_rate: float = 0.0025) -> dict:
-    """Deterministic long-only close-signal/next-open-fill OHLC backtest."""
+                         notional_usd: float = 10.0, fee_rate: float = 0.0025,
+                         slippage_bps: float = 0.0) -> dict:
+    """Deterministic long-only close-signal/next-open-fill OHLC backtest.
+
+    Fees apply to executed notional on entry and exit. Slippage is an adverse
+    percentage of price on both sides, expressed in basis points.
+    """
     if len(bars) < 50:
         raise ValueError("At least 50 candles are required")
-    if starting_equity <= 0 or notional_usd <= 0 or fee_rate < 0:
-        raise ValueError("Equity/notional must be positive and fee rate non-negative")
+    if starting_equity <= 0 or notional_usd <= 0 or fee_rate < 0 or slippage_bps < 0:
+        raise ValueError("Equity/notional must be positive; fee and slippage must be non-negative")
+    slip = slippage_bps / 10000.0
+    if slip >= 1:
+        raise ValueError("Slippage must be below 10000 basis points")
     closes = [float(item["c"]) for item in bars]
     fast, slow, volatility = ema_series(closes, 9), ema_series(closes, 21), atr_series(bars, 14)
     position, trades = None, []
@@ -268,13 +276,17 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
     def close_position(candle: dict, exit_price: float, reason: str) -> None:
         nonlocal position
         entry, quantity = float(position["entry"]), float(position["quantity"])
-        gross = (exit_price - entry) * quantity
-        fees = (entry * quantity + exit_price * quantity) * fee_rate
+        executed_exit = exit_price * (1.0 - slip)
+        gross = (executed_exit - entry) * quantity
+        fees = (entry * quantity + executed_exit * quantity) * fee_rate
+        slippage_cost = (float(position["reference_entry"]) - entry) * quantity + (exit_price - executed_exit) * quantity
         trades.append({
             "entry_time": position["entry_time"], "exit_time": candle.get("t"),
-            "entry_price": round(entry, 2), "exit_price": round(exit_price, 2),
+            "entry_price": round(entry, 2), "exit_price": round(executed_exit, 2),
             "exit_reason": reason, "gross_pnl_usd": round(gross, 4),
-            "estimated_fees_usd": round(fees, 4), "net_pnl_usd": round(gross-fees, 4),
+            "estimated_fees_usd": round(fees, 4),
+            "estimated_slippage_usd": round(slippage_cost, 4),
+            "net_pnl_usd": round(gross-fees, 4),
         })
         position = None
 
@@ -290,10 +302,12 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
                 or not (fast[i] > slow[i] and closes[i] > fast[i])):
             continue
         entry_bar = bars[i+1]
-        entry = float(entry_bar["o"])
-        if entry <= 0:
+        reference_entry = float(entry_bar["o"])
+        if reference_entry <= 0:
             continue
-        position = {"entry": entry, "quantity": notional_usd/entry,
+        entry = reference_entry * (1.0 + slip)
+        position = {"entry": entry, "reference_entry": reference_entry,
+                    "quantity": notional_usd/entry,
                     "stop": entry-1.5*a, "target": entry+2.0*a,
                     "entry_time": entry_bar.get("t")}
         # Evaluate high/low occurring after the next-open fill on this same candle.
@@ -306,7 +320,16 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
 
     gross_values = [float(t["gross_pnl_usd"]) for t in trades]
     fee_values = [float(t["estimated_fees_usd"]) for t in trades]
+    slippage_values = [float(t["estimated_slippage_usd"]) for t in trades]
     net_values = [float(t["net_pnl_usd"]) for t in trades]
+    exit_breakdown = {}
+    for trade in trades:
+        reason = trade["exit_reason"]
+        item = exit_breakdown.setdefault(reason, {"trades": 0, "net_pnl_usd": 0.0})
+        item["trades"] += 1
+        item["net_pnl_usd"] += float(trade["net_pnl_usd"])
+    for item in exit_breakdown.values():
+        item["net_pnl_usd"] = round(item["net_pnl_usd"], 4)
     gp, gl = sum(x for x in gross_values if x > 0), -sum(x for x in gross_values if x < 0)
     np_, nl = sum(x for x in net_values if x > 0), -sum(x for x in net_values if x < 0)
     wins, losses = sum(x > 0 for x in net_values), sum(x < 0 for x in net_values)
@@ -325,6 +348,8 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
         "net_pnl_usd": round(sum(net_values), 4),
         "gross_pnl_usd": round(sum(gross_values), 4),
         "estimated_fees_usd": round(sum(fee_values), 4),
+        "estimated_slippage_usd": round(sum(slippage_values), 4),
+        "exit_breakdown": exit_breakdown,
         "trades": len(trades), "wins": wins, "losses": losses,
         "breakeven_trades": sum(x == 0 for x in net_values),
         "win_rate_percent": round(wins/len(trades)*100, 2) if trades else 0,
@@ -388,6 +413,8 @@ async def backtest(
     limit:int=Query(2000,ge=100,le=10000),
     starting_equity:float=Query(100,gt=0,le=1000000),
     notional_usd:float=Query(10,gt=0,le=100000),
+    fee_rate:float=Query(0.0025,ge=0,le=0.02),
+    slippage_bps:float=Query(0,ge=0,le=500),
 ):
     """Read-only long-only EMA/ATR backtest. It never submits orders."""
     bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
@@ -397,7 +424,7 @@ async def backtest(
             "status":"insufficient_data","automated_execution":False
         }
 
-    result = run_ema_atr_backtest(bars, starting_equity, notional_usd)
+    result = run_ema_atr_backtest(bars, starting_equity, notional_usd, fee_rate, slippage_bps)
     trades, metrics = result["trades"], result["metrics"]
     return {
         "symbol":"BTC/USD","timeframe":timeframe,"bars_used":len(bars),
@@ -409,13 +436,14 @@ async def backtest(
             "entry":"EMA9 > EMA21 and close > EMA9; fill next candle open; evaluate entry candle range",
             "stop_loss":"1.5 x ATR14","take_profit":"2.0 x ATR14",
             "position_notional_usd":notional_usd,
-            "estimated_fee_per_side_percent":0.25,
+            "estimated_fee_per_side_percent":fee_rate*100,
+            "slippage_basis_points_per_side":slippage_bps,
             "same_candle_stop_and_target":"STOP_LOSS_FIRST",
             "gap_fill":"Stop gaps fill at candle open; target gaps fill at candle open; intrabar path otherwise unknown"
         },
         "metrics":metrics,"recent_trades":trades[-20:],
         "status":"historical_simulation_not_a_live_result","automated_execution":False,
-        "warning":"Fee rate is an estimate (0.25% per side), not a verified Alpaca fee. OHLC candles cannot reveal intrabar order; stop is assumed first when both levels are touched. Entry candle is evaluated after next-open fill. No slippage/spread model is applied; results are not a promise of future performance."
+        "warning":"Fee rate is configurable and remains an estimate, not a verified Alpaca fee. Slippage is a user-supplied adverse-price assumption, not measured market impact. OHLC candles cannot reveal intrabar order; stop is assumed first when both levels are touched. Results are historical simulations, not a promise of future performance."
     }
 
 
