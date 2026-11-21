@@ -2,11 +2,11 @@
 
 Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca paper-account backend.
 
-## Current build: 0.2
+## Current build: 0.3
 - iPhone-friendly installable PWA shell.
 - Alpaca paper account equity and buying power endpoint.
 - Latest BTC/USD trade endpoint.
-- Historical 5-minute crypto bars endpoint.
+- Historical crypto bars endpoint returns the newest requested candles in chronological order (oldest to newest), with latest candle timestamp and close included.
 - Experimental EMA(9)/EMA(21) trend filter and ATR(14) volatility diagnostic.
 - Read-only historical backtest endpoint for a long-only EMA/ATR strategy.
 - Automated execution is OFF. No order-submission endpoint exists.
@@ -28,7 +28,7 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - GET /health
 - GET /api/account
 - GET /api/market/btc
-- GET /api/market/bars?timeframe=5Min&limit=100
+- GET /api/market/bars?timeframe=5Min&limit=100 (newest candles, returned chronologically)
 - GET /api/signal?timeframe=5Min
 - GET /api/backtest?timeframe=5Min&limit=2000&starting_equity=100&notional_usd=10
 
