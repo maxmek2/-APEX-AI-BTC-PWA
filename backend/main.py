@@ -535,7 +535,7 @@ PAPER_API_ORIGIN = "https://paper-api.alpaca.markets"
 
 class PaperPreviewRequest(BaseModel):
     timeframe: str = Field(default="5Min", pattern="^(1Min|5Min|15Min|1Hour)$")
-    risk_percent: float = Field(default=0.5, gt=0, le=1.0)
+    risk_percent: float = Field(default=100.0, gt=0, le=100.0)
     max_notional_usd: float = Field(default=10.0, gt=0, le=10.0)
     stop_atr_multiple: float = Field(default=1.5, ge=1.0, le=3.0)
     reward_risk: float = Field(default=2.0, ge=1.0, le=3.0)
@@ -981,7 +981,7 @@ async def simulate_paper_trade_lifecycle(request: PaperLifecycleSimulationReques
 # Daily trade count is unlimited; risk, exposure, cooldown and daily-loss guards remain.
 _auto_entry = {
     "enabled": False, "mode": "paper", "timeframe": "5Min",
-    "risk_fraction": 0.005, "max_notional_usd": 10.0,
+    "risk_fraction": 1.0, "max_notional_usd": 10.0,
     "max_equity_fraction": 0.10, "daily_loss_limit_fraction": 0.02,
     "cooldown_seconds": 900, "day_key": None, "day_start_equity": None,
     "last_entry_attempt": None, "last_signal_bar": None,
