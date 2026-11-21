@@ -8,7 +8,7 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - Latest BTC/USD trade endpoint.
 - Historical crypto bars endpoint returns the newest requested candles in chronological order (oldest to newest), with latest candle timestamp and close included.
 - Experimental EMA(9)/EMA(21) trend filter and ATR(14) volatility diagnostic.
-- Read-only historical backtest endpoint for a long-only EMA/ATR strategy.
+- Read-only historical backtest endpoint for a long-only EMA/ATR strategy; fetches paginated history up to 10,000 bars and reports page/history coverage diagnostics.
 - Paper execution safety status and risk-bounded BTC trade preview endpoints (preview only; no entry order is submitted).\n- Server-side BTC protective exit manager with explicit arm/disarm endpoints; starts DISARMED, manages only an existing BTC paper position, and never opens a position.\n- Automated execution and order submission remain OFF.
 
 ## Safety
