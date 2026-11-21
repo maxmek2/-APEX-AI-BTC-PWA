@@ -60,6 +60,18 @@ async def account():
         "portfolio_value","trading_blocked"
     )} | {"mode":"paper"}
 
+@app.get("/api/positions")
+async def positions():
+    """Read-only list of current Alpaca paper positions."""
+    data=await get_json(f"{BASE}/v2/positions")
+    return [{
+        "symbol":item.get("symbol"),"qty":item.get("qty"),
+        "avg_entry_price":item.get("avg_entry_price"),"market_value":item.get("market_value"),
+        "unrealized_pl":item.get("unrealized_pl"),"unrealized_plpc":item.get("unrealized_plpc"),
+        "side":item.get("side")
+    } for item in data]
+
+
 @app.get("/api/market/btc")
 async def btc_market():
     data=await get_json(
