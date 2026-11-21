@@ -1189,6 +1189,12 @@ async def enable_auto_entry():
             _auto_entry.update({"day_key": today, "day_start_equity": equity, "trades_today": 0})
         elif _auto_entry.get("day_start_equity") is None:
             _auto_entry["day_start_equity"] = equity
+        else:
+            baseline = float(_auto_entry["day_start_equity"])
+            if equity <= baseline * (1 - _auto_entry["daily_loss_limit_fraction"]):
+                raise HTTPException(409, "Daily loss limit reached; Auto Entry cannot be enabled again today")
+            if int(_auto_entry.get("trades_today", 0)) >= int(_auto_entry["max_trades_per_day"]):
+                raise HTTPException(409, "Daily submitted-entry limit reached; Auto Entry cannot be enabled again today")
         # Re-enabling must not reset today's loss baseline, entry count,
         # cooldown, or last processed candle; otherwise the guards are bypassable.
         _auto_entry.update({
