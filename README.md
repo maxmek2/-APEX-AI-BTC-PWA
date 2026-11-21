@@ -102,7 +102,7 @@ Entry execution remains disabled. The exit manager can submit a market close for
 
 ## Paper API access protection (Stage 4)
 
-- Every `/api/paper/*` route requires `Authorization: Bearer <token>`.
+- Every `/api/paper/*` route plus the private `/api/account` and `/api/positions` reads requires `Authorization: Bearer <token>`.
 - Set a long, random `APEX_API_TOKEN` environment variable on the Render backend service before using Paper status or preview features. If it is missing, Paper routes fail closed with HTTP 503; an invalid/missing browser token returns HTTP 401.
 - In the PWA Settings, enter the same token in **Paper API access token**. It is held in browser session storage and is not committed to frontend JavaScript. Never enter Alpaca API credentials in the PWA.
 - Keep Auto Entry OFF and Exit Manager DISARMED. This token protects access; it does not authorize or activate execution by itself.
