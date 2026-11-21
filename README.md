@@ -2,7 +2,7 @@
 
 Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca paper-account backend.
 
-## Current build: 0.3
+## Current build: 0.4
 - iPhone-friendly installable PWA shell.
 - Alpaca paper account equity and buying power endpoint.
 - Latest BTC/USD trade endpoint.
@@ -42,3 +42,14 @@ This build is read-only. It cannot place, modify, or cancel orders.
 - Estimated fee assumption: 0.25% per side. This is a modelling assumption, not a verified Alpaca fee quote.
 - If a candle touches both stop and target, the simulator assumes the stop is hit first.
 - Backtest output is historical simulation only and is not a forecast or proof of profitability.
+
+## Dashboard v1.0 reference layout
+- BTC/USD ticker with selected timeframe and displayed-window price change.
+- Candlestick chart with EMA 9, EMA 21, and Alpaca crypto tick-volume bars.
+- EMA crossover markers are setup/watch annotations only; they are not executed orders.
+- Read-only paper account equity, cash, buying power, and current open positions.
+- Multi-timeframe context: 5-minute, 15-minute, 1-hour, and aggregated 4-hour candles.
+- Rule-alignment score and optional read-only historical backtest report.
+- Daily realized P&L, win rate, and drawdown remain unavailable until verified fill-history accounting is implemented; the UI intentionally does not fabricate them.
+- Pause Monitor, Stop Monitor, and View Report control dashboard monitoring/report display only. They do not pause or stop a trading bot.
+- Automated execution remains OFF. No order-submission endpoint is implemented.
