@@ -588,3 +588,44 @@ async def disarm_paper_exit_manager():
     _exit_manager["armed"] = False
     _exit_manager["last_event"] = "DISARMED_BY_USER"
     return await paper_exit_manager_status()
+
+
+class ExitSimulationRequest(BaseModel):
+    entry_price: float = Field(gt=0)
+    stop_price: float = Field(gt=0)
+    take_profit_price: float = Field(gt=0)
+    simulated_price: float = Field(gt=0)
+
+def evaluate_exit_simulation(entry: float, stop: float, target: float, price: float) -> dict:
+    if not (stop < entry < target):
+        raise ValueError("Expected a long setup with stop < entry < target")
+    if price <= stop:
+        event = "STOP_LOSS_TRIGGERED"
+    elif price >= target:
+        event = "TAKE_PROFIT_TRIGGERED"
+    else:
+        event = "HOLD_POSITION"
+    return {
+        "event": event,
+        "would_request_paper_close": event != "HOLD_POSITION",
+        "order_submitted": False,
+        "manager_state_changed": False
+    }
+
+@app.post("/api/paper/exit-manager/simulate")
+async def simulate_paper_exit(request: ExitSimulationRequest):
+    """Pure deterministic test. Does not call Alpaca or change manager state."""
+    try:
+        result = evaluate_exit_simulation(
+            request.entry_price, request.stop_price,
+            request.take_profit_price, request.simulated_price
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {
+        "mode": "SIMULATION_ONLY",
+        "symbol": "BTC/USD",
+        "inputs": request.model_dump(),
+        **result,
+        "safety": "No broker API call; no order submitted; manager remains unchanged."
+    }
