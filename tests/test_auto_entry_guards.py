@@ -56,7 +56,7 @@ def test_auto_entry_fails_closed_when_fresh_quote_has_no_ask(monkeypatch):
     async def fake_paper_request(method, path, params=None, body=None):
         broker_calls.append((method, path, body))
         if path == "/v2/account":
-            return {"equity": "100", "buying_power": "100"}
+            return {"status": "ACTIVE", "equity": "100", "buying_power": "100"}
         if path == "/v2/positions":
             return []
         if path == "/v2/orders":
