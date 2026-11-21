@@ -2,7 +2,7 @@
 
 Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca paper-account backend.
 
-## Current build: 0.6
+## Current build: 0.7
 - iPhone-friendly installable PWA shell.
 - Alpaca paper account equity and buying power endpoint.
 - Latest BTC/USD trade endpoint.
@@ -30,7 +30,7 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - GET /api/market/btc
 - GET /api/market/bars?timeframe=5Min&limit=100 (newest candles, returned chronologically)
 - GET /api/signal?timeframe=5Min
-- GET /api/backtest?timeframe=5Min&limit=2000&starting_equity=100&notional_usd=10\n- GET /api/paper/status\n- POST /api/paper/preview (JSON: timeframe, risk_percent, max_notional_usd, stop_atr_multiple, reward_risk)\n- GET /api/paper/exit-manager\n- POST /api/paper/exit-manager/arm (requires an existing BTC paper position)\n- POST /api/paper/exit-manager/disarm
+- GET /api/backtest?timeframe=5Min&limit=2000&starting_equity=100&notional_usd=10\n- GET /api/paper/status\n- POST /api/paper/preview (JSON: timeframe, risk_percent, max_notional_usd, stop_atr_multiple, reward_risk)\n- GET /api/paper/exit-manager\n- POST /api/paper/exit-manager/simulate (pure deterministic SL/TP test; no Alpaca calls or state changes)\n- POST /api/paper/exit-manager/arm (requires an existing BTC paper position)\n- POST /api/paper/exit-manager/disarm
 
 Entry execution remains disabled. The exit manager can submit a market close for an existing BTC paper position only after explicit arming and only when a stop/target is crossed.
 
