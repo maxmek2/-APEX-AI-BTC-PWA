@@ -44,7 +44,15 @@ def test_backtest_fetches_multiple_pages_and_returns_chronological_bars(monkeypa
     assert result["data_pages_fetched"] == 2
     assert result["has_more_data"] is False
     assert calls[0]["limit"] == 100
+    assert calls[0]["start"].endswith("Z")
+    assert calls[0]["end"].endswith("Z")
+    from datetime import datetime
+    requested_start = datetime.fromisoformat(calls[0]["start"].replace("Z", "+00:00"))
+    requested_end = datetime.fromisoformat(calls[0]["end"].replace("Z", "+00:00"))
+    assert (requested_end - requested_start).total_seconds() >= 100 * 300
     assert calls[1]["page_token"] == "page-2"
+    assert calls[1]["start"] == calls[0]["start"]
+    assert calls[1]["end"] == calls[0]["end"]
     assert result["period"]["from"] == _bar(0)["t"]
     assert result["period"]["to"] == _bar(99)["t"]
 
