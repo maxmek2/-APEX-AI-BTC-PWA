@@ -136,6 +136,18 @@ Entry execution remains disabled. The exit manager can submit a market close for
 5. After deployment, verify `/health`, authenticated Paper status, Auto Entry OFF, and Exit Manager DISARMED. Do not enable either control as part of smoke testing.
 
 
+
+## Paper Auto Entry dashboard controls
+
+- The dashboard includes a read-only **Run safety preflight** action plus explicit **Enable Paper Auto Entry** and **Disable** controls.
+- Enable requires an authenticated dashboard token and checks the exact Alpaca Paper host, active/unblocked account, positive equity/buying power, no open BTC position/order, and a disarmed Exit Manager.
+- The entry signal is calculated only from completed 5-minute candles. A fresh quote, valid ATR, cooldown, daily loss guard, position/order checks and notional/risk limits are checked again by the server loop before each entry.
+- Disabling and re-enabling during the same UTC day does not reset the daily equity baseline, submitted-entry count, cooldown, or last processed candle. Re-enable is blocked after the 2% daily loss threshold or five submitted entries.
+- The **Enable** button starts a Paper-only server controller; it can submit Alpaca Paper market orders when a later setup qualifies. It does not place an order immediately just by being enabled.
+- Auto Entry remains OFF after server restart. A restart also forces the Exit Manager DISARMED and requires manual broker position/order reconciliation.
+- The software-polled exit manager is not exchange-native protection. A position can remain unprotected during startup, network outages, Render restarts or delayed market data. Do not treat this controller as production-safe or live-trading-ready.
+- The preflight endpoint is read-only and never submits orders. GitHub CI uses mocks and does not prove actual Alpaca fills or Render runtime behavior.
+
 ## Stage 5 — Paper operations validation
 
 - `GET /api/paper/validation` is an authenticated, read-only reconciliation snapshot.
