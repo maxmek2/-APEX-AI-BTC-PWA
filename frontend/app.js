@@ -124,6 +124,52 @@ function renderSignalConfirmation(signal,bars){
   ].join("");
 }
 
+
+function renderEntryQuality(signal,bars){
+  const scoreEl=document.getElementById("entry-score");
+  const labelEl=document.getElementById("entry-quality-label");
+  const detailEl=document.getElementById("entry-quality-detail");
+  const checksEl=document.getElementById("entry-quality-checks");
+  if(!scoreEl||!labelEl||!detailEl||!checksEl)return;
+
+  const direction=signal?.signal;
+  const candles=(bars||[]).map(bar=>({
+    o:Number(bar.o),c:Number(bar.c)
+  })).filter(bar=>Number.isFinite(bar.o)&&Number.isFinite(bar.c));
+  if(!["LONG_SETUP","SHORT_SETUP"].includes(direction)||candles.length<2||
+     signal.ema_9==null||signal.ema_21==null||signal.atr_14==null){
+    scoreEl.textContent="—";
+    labelEl.textContent="NO CONFIRMED DIRECTION";
+    detailEl.textContent="A directional setup and enough candle data are required before a score can be calculated.";
+    checksEl.innerHTML="";
+    return;
+  }
+
+  const isLong=direction==="LONG_SETUP";
+  const latest=candles[candles.length-1];
+  const previous=candles[candles.length-2];
+  const emaAligned=isLong?Number(signal.ema_9)>Number(signal.ema_21):Number(signal.ema_9)<Number(signal.ema_21);
+  const priceAligned=isLong?Number(signal.last_close)>Number(signal.ema_9):Number(signal.last_close)<Number(signal.ema_9);
+  const momentumAligned=isLong?latest.c>previous.c:latest.c<previous.c;
+  const candleAligned=isLong?latest.c>latest.o:latest.c<latest.o;
+  const atrValid=Number(signal.atr_14)>0;
+  const parts=[
+    {name:"EMA trend alignment",points:35,ok:emaAligned},
+    {name:"Price vs EMA 9",points:25,ok:priceAligned},
+    {name:"Last-close momentum",points:20,ok:momentumAligned},
+    {name:"Latest candle direction",points:10,ok:candleAligned},
+    {name:"ATR 14 available",points:10,ok:atrValid}
+  ];
+  const score=parts.reduce((sum,item)=>sum+(item.ok?item.points:0),0);
+  const quality=score>=85?"STRONG ALIGNMENT":score>=70?"GOOD ALIGNMENT":score>=50?"MIXED ALIGNMENT":"WEAK ALIGNMENT";
+  scoreEl.textContent=String(score)+"/100";
+  labelEl.textContent=quality;
+  detailEl.textContent=(isLong?"LONG":"SHORT")+" rule-alignment score · heuristic, not a win probability or entry instruction.";
+  checksEl.innerHTML=parts.map(item=>
+    `<div class="check-row"><span>${item.name} · ${item.points} pts</span><strong class="${item.ok?"check-pass":"check-fail"}">${item.ok?"PASS":"NO POINTS"}</strong></div>`
+  ).join("");
+}
+
 async function refresh(){
   showConnection("Checking API…");
   let accountConnected=false;
@@ -165,10 +211,12 @@ async function refresh(){
       "Waiting for at least 30 candles.";
     document.getElementById("signal-time").textContent=signal.last_bar_time?"Last candle "+new Date(signal.last_bar_time).toLocaleString():"";
     renderSignalConfirmation(signal,chartBars);
+    renderEntryQuality(signal,chartBars);
   }catch(error){
     document.getElementById("signal-value").textContent="ENGINE OFFLINE";
     document.getElementById("signal-detail").textContent="Signal error: "+error.message;
     renderSignalConfirmation(null,[]);
+    renderEntryQuality(null,[]);
   }
 }
 
