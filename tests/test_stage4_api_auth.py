@@ -60,5 +60,6 @@ def test_private_account_read_accepts_token_and_returns_paper_data(monkeypatch):
             "/api/account", headers={"Authorization": "Bearer test-secret"}
         )
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, private"
     assert response.json()["mode"] == "paper"
     assert response.json()["equity"] == "100"
