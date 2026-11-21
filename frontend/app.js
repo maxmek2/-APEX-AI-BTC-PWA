@@ -101,6 +101,29 @@ function renderChart(bars){
     `${candles.length} recent 5-minute candles · EMA 9 (yellow) · EMA 21 (blue) · ATR 14: ${atr14==null?"need 14 candles":money(atr14)}`;
 }
 
+function renderSignalConfirmation(signal,bars){
+  const target=document.getElementById("signal-checks");
+  if(!target)return;
+  const valid=signal&&signal.ema_9!=null&&signal.ema_21!=null&&signal.atr_14!=null;
+  if(!valid){
+    target.innerHTML="<p class=\"muted\">Not enough data to confirm the current setup.</p>";
+    return;
+  }
+  const emaBull=Number(signal.ema_9)>Number(signal.ema_21);
+  const priceAbove=Number(signal.last_close)>Number(signal.ema_9);
+  const atrOk=Number(signal.atr_14)>0;
+  const latest=bars?.length?Number(bars[bars.length-1].c):Number(signal.last_close);
+  const prior=bars?.length>1?Number(bars[bars.length-2].c):null;
+  const momentum=prior==null?null:latest>prior?"UP":latest<prior?"DOWN":"FLAT";
+  const row=(label,passed,detail)=>`<div class="check-row"><span>${label}</span><strong class="${passed===null?"muted":passed?"check-pass":"check-fail"}">${detail}</strong></div>`;
+  target.innerHTML=[
+    row("EMA trend · EMA 9 vs EMA 21",emaBull,emaBull?"BULLISH":"NOT BULLISH"),
+    row("Price position · close vs EMA 9",priceAbove,priceAbove?"ABOVE":"NOT ABOVE"),
+    row("ATR 14 · volatility available",atrOk,atrOk?"VALID":"UNAVAILABLE"),
+    row("Last-candle momentum · informational",momentum==="UP"?true:momentum==="DOWN"?false:null,momentum||"UNKNOWN")
+  ].join("");
+}
+
 async function refresh(){
   showConnection("Checking API…");
   let accountConnected=false;
@@ -139,9 +162,11 @@ async function refresh(){
       "EMA 9: "+money(signal.ema_9)+" · EMA 21: "+money(signal.ema_21)+" · ATR 14: "+money(signal.atr_14):
       "Waiting for at least 30 candles.";
     document.getElementById("signal-time").textContent=signal.last_bar_time?"Last candle "+new Date(signal.last_bar_time).toLocaleString():"";
+    renderSignalConfirmation(signal,chartBars);
   }catch(error){
     document.getElementById("signal-value").textContent="ENGINE OFFLINE";
     document.getElementById("signal-detail").textContent="Signal error: "+error.message;
+    renderSignalConfirmation(null,[]);
   }
 }
 
