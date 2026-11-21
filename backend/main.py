@@ -340,7 +340,7 @@ async def fetch_backtest_bars(timeframe: str, limit: int) -> tuple[list[dict], b
     # Alpaca defaults historical crypto bars to the current UTC day when
     # start/end are omitted. Request enough explicit history for the target
     # candle count, plus a one-day buffer, so 2,000 M5 bars span ~7 days.
-    interval_seconds = {"5Min": 300, "15Min": 900, "1Hour": 3600}.get(timeframe)
+    interval_seconds = {"1Min": 60, "5Min": 300, "15Min": 900, "1Hour": 3600}.get(timeframe)
     if interval_seconds is None:
         raise HTTPException(400, "Unsupported backtest timeframe")
     end_dt = datetime.now(timezone.utc)
@@ -384,7 +384,7 @@ async def fetch_backtest_bars(timeframe: str, limit: int) -> tuple[list[dict], b
 
 @app.get("/api/backtest")
 async def backtest(
-    timeframe:str=Query("5Min",pattern="^(5Min|15Min|1Hour)$"),
+    timeframe:str=Query("5Min",pattern="^(1Min|5Min|15Min|1Hour)$"),
     limit:int=Query(2000,ge=100,le=10000),
     starting_equity:float=Query(100,gt=0,le=1000000),
     notional_usd:float=Query(10,gt=0,le=100000),
