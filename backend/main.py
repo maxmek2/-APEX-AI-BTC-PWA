@@ -64,9 +64,10 @@ async def btc_bars(timeframe:str=Query("5Min",pattern="^(1Min|5Min|15Min|1Hour)$
                    limit:int=Query(100,ge=30,le=500)):
     data=await get_json(
         f"{DATA}/v1beta3/crypto/us/bars",
-        {"symbols":"BTC/USD","timeframe":timeframe,"limit":limit,"sort":"asc"}
+        {"symbols":"BTC/USD","timeframe":timeframe,"limit":limit,"sort":"desc"}
     )
     bars=data.get("bars",{}).get("BTC/USD",[])
+    bars=list(reversed(bars))  # Keep candles chronological after fetching newest first.
     return {"symbol":"BTC/USD","timeframe":timeframe,"count":len(bars),"bars":bars}
 
 def ema(values:list[float],period:int)->float|None:
@@ -98,9 +99,10 @@ def atr(bars:list[dict],period:int=14)->float|None:
 async def signal(timeframe:str=Query("5Min",pattern="^(1Min|5Min|15Min|1Hour)$")):
     data=await get_json(
         f"{DATA}/v1beta3/crypto/us/bars",
-        {"symbols":"BTC/USD","timeframe":timeframe,"limit":100,"sort":"asc"}
+        {"symbols":"BTC/USD","timeframe":timeframe,"limit":100,"sort":"desc"}
     )
     bars=data.get("bars",{}).get("BTC/USD",[])
+    bars=list(reversed(bars))  # Keep candles chronological after fetching newest first.
     if len(bars)<30:
         return {"signal":"INSUFFICIENT_DATA","timeframe":timeframe,
                 "bars_received":len(bars),"automated_execution":False}
@@ -165,9 +167,10 @@ async def backtest(
     """Read-only long-only EMA/ATR backtest. It never submits orders."""
     data=await get_json(
         f"{DATA}/v1beta3/crypto/us/bars",
-        {"symbols":"BTC/USD","timeframe":timeframe,"limit":limit,"sort":"asc"}
+        {"symbols":"BTC/USD","timeframe":timeframe,"limit":limit,"sort":"desc"}
     )
     bars=data.get("bars",{}).get("BTC/USD",[])
+    bars=list(reversed(bars))  # Keep candles chronological after fetching newest first.
     if len(bars)<50:
         return {
             "symbol":"BTC/USD","timeframe":timeframe,"bars_used":len(bars),
