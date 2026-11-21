@@ -279,7 +279,7 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
         executed_exit = exit_price * (1.0 - slip)
         gross = (executed_exit - entry) * quantity
         fees = (entry * quantity + executed_exit * quantity) * fee_rate
-        slippage_cost = (float(position["reference_entry"]) - entry) * quantity + (exit_price - executed_exit) * quantity
+        slippage_cost = (entry - float(position["reference_entry"])) * quantity + (exit_price - executed_exit) * quantity
         trades.append({
             "entry_time": position["entry_time"], "exit_time": candle.get("t"),
             "entry_price": round(entry, 2), "exit_price": round(executed_exit, 2),
