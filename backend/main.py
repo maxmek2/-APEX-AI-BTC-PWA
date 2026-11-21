@@ -240,6 +240,17 @@ def atr_series(bars:list[dict],period:int=14)->list[float|None]:
 async def fetch_backtest_bars(timeframe: str, limit: int) -> tuple[list[dict], bool, int]:
     """Fetch up to limit BTC bars using Alpaca pagination; return oldest-to-newest bars."""
     endpoint = f"{DATA}/v1beta3/crypto/us/bars"
+    # Alpaca defaults historical crypto bars to the current UTC day when
+    # start/end are omitted. Request enough explicit history for the target
+    # candle count, plus a one-day buffer, so 2,000 M5 bars span ~7 days.
+    interval_seconds = {"5Min": 300, "15Min": 900, "1Hour": 3600}.get(timeframe)
+    if interval_seconds is None:
+        raise HTTPException(400, "Unsupported backtest timeframe")
+    end_dt = datetime.now(timezone.utc)
+    start_dt = end_dt - timedelta(seconds=interval_seconds * limit, days=1)
+    start_time = start_dt.isoformat().replace("+00:00", "Z")
+    end_time = end_dt.isoformat().replace("+00:00", "Z")
+
     newest_first: list[dict] = []
     page_token = None
     pages = 0
@@ -249,6 +260,8 @@ async def fetch_backtest_bars(timeframe: str, limit: int) -> tuple[list[dict], b
         params = {
             "symbols": "BTC/USD",
             "timeframe": timeframe,
+            "start": start_time,
+            "end": end_time,
             "limit": min(10000, limit - len(newest_first)),
             "sort": "desc",
         }
