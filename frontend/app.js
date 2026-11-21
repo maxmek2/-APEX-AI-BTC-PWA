@@ -125,6 +125,56 @@ function renderSignalConfirmation(signal,bars){
 }
 
 
+
+function analyzeBars(bars){
+  if(!Array.isArray(bars)||bars.length<30)return {signal:"INSUFFICIENT_DATA",bars_received:bars?.length||0};
+  const candles=bars.map(bar=>({o:Number(bar.o),h:Number(bar.h),l:Number(bar.l),c:Number(bar.c),t:bar.t}))
+    .filter(bar=>[bar.o,bar.h,bar.l,bar.c].every(Number.isFinite));
+  if(candles.length<30)return {signal:"INSUFFICIENT_DATA",bars_received:candles.length};
+  const closes=candles.map(bar=>bar.c);
+  const calcEMA=period=>{
+    const alpha=2/(period+1);
+    let value=closes.slice(0,period).reduce((sum,n)=>sum+n,0)/period;
+    for(let i=period;i<closes.length;i++)value=alpha*closes[i]+(1-alpha)*value;
+    return value;
+  };
+  const ranges=[];
+  for(let i=1;i<candles.length;i++){
+    const bar=candles[i],prev=candles[i-1].c;
+    ranges.push(Math.max(bar.h-bar.l,Math.abs(bar.h-prev),Math.abs(bar.l-prev)));
+  }
+  let atr=ranges.slice(0,14).reduce((sum,n)=>sum+n,0)/14;
+  for(let i=14;i<ranges.length;i++)atr=(atr*13+ranges[i])/14;
+  const fast=calcEMA(9),slow=calcEMA(21),last=closes[closes.length-1];
+  const direction=fast>slow&&last>fast?"LONG_SETUP":fast<slow&&last<fast?"SHORT_SETUP":"WAIT";
+  return {signal:direction,ema_9:Number(fast.toFixed(2)),ema_21:Number(slow.toFixed(2)),
+    atr_14:Number(atr.toFixed(2)),last_close:last,bars_used:candles.length,last_bar_time:candles[candles.length-1].t};
+}
+
+function aggregateFourHour(hourBars){
+  const groups=new Map();
+  for(const bar of hourBars||[]){
+    const time=Date.parse(bar.t);
+    if(!Number.isFinite(time))continue;
+    const bucket=Math.floor(time/(4*60*60*1000))*4*60*60*1000;
+    if(!groups.has(bucket))groups.set(bucket,[]);
+    groups.get(bucket).push(bar);
+  }
+  const result=[];
+  for(const [bucket,items] of [...groups.entries()].sort((a,b)=>a[0]-b[0])){
+    items.sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
+    if(items.length!==4)continue;
+    const hours=items.map(item=>new Date(item.t).getUTCHours());
+    const expected=[0,1,2,3].map(offset=>new Date(bucket+offset*60*60*1000).getUTCHours());
+    if(hours.some((hour,index)=>hour!==expected[index]))continue;
+    result.push({t:new Date(bucket).toISOString(),o:Number(items[0].o),
+      h:Math.max(...items.map(item=>Number(item.h))),
+      l:Math.min(...items.map(item=>Number(item.l))),
+      c:Number(items[3].c)});
+  }
+  return result;
+}
+
 function renderMTFConfirmation(baseSignal,timeframeResults){
   const target=document.getElementById("mtf-checks");
   const summary=document.getElementById("mtf-summary");
@@ -136,7 +186,7 @@ function renderMTFConfirmation(baseSignal,timeframeResults){
     summary.textContent="The 5-minute engine has no directional setup. Higher timeframes are shown for context only.";
   }else{
     const aligned=rows.filter(item=>item.data?.signal===base).length;
-    summary.textContent=aligned+" of 3 timeframes match the 5-minute "+(base==="LONG_SETUP"?"LONG":"SHORT")+" direction.";
+    summary.textContent=aligned+" of 4 timeframes match the 5-minute "+(base==="LONG_SETUP"?"LONG":"SHORT")+" direction.";
   }
   target.innerHTML=rows.map(item=>{
     const status=item.data?.signal;
@@ -238,21 +288,24 @@ async function refresh(){
       "Waiting for at least 30 candles.";
     document.getElementById("signal-time").textContent=signal.last_bar_time?"Last candle "+new Date(signal.last_bar_time).toLocaleString():"";
     renderSignalConfirmation(signal,chartBars);
-    const mtfResults=await Promise.all(["15Min","1Hour"].map(async timeframe=>{
-      try{
-        const data=await get("/signal?timeframe="+timeframe);
-        return {label:timeframe==="15Min"?"15 MIN":"1 HOUR",data};
-      }catch(error){
-        return {label:timeframe==="15Min"?"15 MIN":"1 HOUR",data:null,error:error.message};
-      }
-    }));
+    const mtfResults=await Promise.all([
+      (async()=>{try{return {label:"15 MIN",data:await get("/signal?timeframe=15Min")};}
+        catch(error){return {label:"15 MIN",data:null,error:error.message};}})(),
+      (async()=>{try{const result=await get("/market/bars?timeframe=1Hour&limit=500");
+        return {label:"1 HOUR",data:analyzeBars(result.bars)};}
+        catch(error){return {label:"1 HOUR",data:null,error:error.message};}})(),
+      (async()=>{try{const result=await get("/market/bars?timeframe=1Hour&limit=500");
+        const fourHour=aggregateFourHour(result.bars);
+        return {label:"4 HOUR",data:analyzeBars(fourHour),error:fourHour.length<30?"Need at least 30 complete 4-hour candles; received "+fourHour.length:undefined};}
+        catch(error){return {label:"4 HOUR",data:null,error:error.message};}})()
+    ]);
     renderMTFConfirmation(signal,mtfResults);
     renderEntryQuality(signal,chartBars);
   }catch(error){
     document.getElementById("signal-value").textContent="ENGINE OFFLINE";
     document.getElementById("signal-detail").textContent="Signal error: "+error.message;
     renderSignalConfirmation(null,[]);
-    renderMTFConfirmation(null,[{label:"15 MIN",data:null},{label:"1 HOUR",data:null}]);
+    renderMTFConfirmation(null,[{label:"15 MIN",data:null},{label:"1 HOUR",data:null},{label:"4 HOUR",data:null}]);
     renderEntryQuality(null,[]);
   }
 }
