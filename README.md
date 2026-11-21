@@ -57,10 +57,10 @@ Entry execution remains disabled. The exit manager can submit a market close for
 
 ## Paper automatic-entry safeguards
 - Auto Entry is OFF by default and resets OFF after a backend restart.
-- No fixed daily trade-count cap; only one open BTC position and one open BTC order are allowed at a time.
+- Maximum five submitted entries per UTC day; only one open BTC position and one open BTC order are allowed at a time.
 - Entries require a new 5-minute LONG_SETUP, a 15-minute cooldown, valid quote/ATR, and risk sizing.
-- Per-entry risk budget is 0.5% of equity; order notional is capped at the lowest of USD 10, 10% of equity, and ATR-based risk sizing.
-- Auto Entry disables itself if equity falls 2% or more below the UTC-day starting equity.
+- Per-entry risk budget is 1% of equity; order notional is capped at the lowest of USD 10, 10% of equity, and ATR-based risk sizing.
+- Auto Entry disables itself if equity falls 2% or more below the UTC-day starting equity. This is a hard 2% daily-loss guard.
 - When a BTC position is detected while Auto Entry is enabled, the server automatically arms the existing software-polled exit manager.
 - This is an experimental Paper-only controller. Market orders and server-polled exits can be affected by latency, fills, outages and slippage. It is not suitable for live trading without further verification.
 
