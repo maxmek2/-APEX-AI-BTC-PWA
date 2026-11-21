@@ -122,7 +122,9 @@ Entry execution remains disabled. The exit manager can submit a market close for
 
 ## Stage 6 — Live trading readiness assessment
 
-- `GET /api/live/readiness` reports outstanding readiness gates.
+- `GET /api/live/readiness` returns a read-only seven-gate assessment and a prioritized next-action list.
+- It dynamically verifies that Paper Auto Entry is OFF and the Paper Exit Manager is DISARMED; all remaining technical and authorization gates remain blocked until independently evidenced.
+- The endpoint reports readiness percentage, gate details, current Paper control states, and explicit no-broker-call/no-order-submitted flags.
 - Live trading remains unsupported and hard-locked. There is no live broker adapter or live order route in this project.
-- The readiness report intentionally remains NOT_READY until strategy validation, controlled Paper lifecycle evidence, reliable exchange-native protection, production security/monitoring, and explicit authorization are independently satisfied.
-- Stage 6 work here is a safety/readiness assessment only; it does not enable real-money execution.
+- The report intentionally remains NOT_READY until strategy validation, controlled Paper lifecycle evidence, reliable exchange-native protection, production security/monitoring, and explicit authorization are independently satisfied.
+- Stage 6 is an assessment only. It does not connect to a live broker, enable execution, or submit orders.
