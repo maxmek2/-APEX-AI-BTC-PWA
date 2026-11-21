@@ -213,3 +213,43 @@ def test_reenable_cannot_reset_daily_loss_or_trade_cap(monkeypatch, equity, trad
     assert exc.value.status_code == 409
     assert expected_message in exc.value.detail
     assert main._auto_entry["enabled"] is False
+
+
+def test_auto_entry_tick_rechecks_enabled_after_acquiring_lock(monkeypatch):
+    class DisableBeforeLockEntry:
+        async def __aenter__(self):
+            main._auto_entry["enabled"] = False
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(main, "_paper_only_configured", lambda: True)
+    monkeypatch.setattr(main, "_auto_entry_lock", DisableBeforeLockEntry())
+    monkeypatch.setitem(main._auto_entry, "enabled", True)
+    calls = []
+
+    async def fake_paper_request(method, path, params=None, body=None):
+        calls.append((method, path))
+        raise AssertionError("Tick must stop before broker calls after Disable")
+
+    monkeypatch.setattr(main, "_paper_request", fake_paper_request)
+    asyncio.run(main._auto_entry_tick())
+    assert calls == []
+    assert main._auto_entry["enabled"] is False
+
+
+def test_disable_auto_entry_uses_execution_lock(monkeypatch):
+    class TrackingLock:
+        def __init__(self):
+            self.acquired = False
+        async def __aenter__(self):
+            self.acquired = True
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    lock = TrackingLock()
+    monkeypatch.setattr(main, "_auto_entry_lock", lock)
+    monkeypatch.setitem(main._auto_entry, "enabled", True)
+    result = asyncio.run(main.disable_auto_entry())
+    assert lock.acquired is True
+    assert result["enabled"] is False
+    assert result["last_event"] == "DISABLED_BY_USER"
