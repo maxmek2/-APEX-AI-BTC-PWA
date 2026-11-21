@@ -74,3 +74,25 @@ def test_backtest_reports_when_more_history_exists_after_requested_limit(monkeyp
     assert result["history_complete_for_request"] is True
     assert result["has_more_data"] is True
     assert result["data_pages_fetched"] == 1
+
+
+def test_one_minute_backtest_uses_one_minute_history_window(monkeypatch):
+    calls = []
+
+    async def fake_get_json(url, params):
+        calls.append(dict(params))
+        return {
+            "bars": {"BTC/USD": [_bar(i) for i in range(49, -1, -1)]},
+            "next_page_token": None,
+        }
+
+    monkeypatch.setattr(main, "get_json", fake_get_json)
+    with TestClient(main.app) as client:
+        response = client.get("/api/backtest?timeframe=1Min&limit=100")
+
+    assert response.status_code == 200
+    assert calls[0]["timeframe"] == "1Min"
+    from datetime import datetime
+    start = datetime.fromisoformat(calls[0]["start"].replace("Z", "+00:00"))
+    end = datetime.fromisoformat(calls[0]["end"].replace("Z", "+00:00"))
+    assert (end - start).total_seconds() >= 100 * 60
