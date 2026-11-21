@@ -125,6 +125,33 @@ function renderSignalConfirmation(signal,bars){
 }
 
 
+function renderMTFConfirmation(baseSignal,timeframeResults){
+  const target=document.getElementById("mtf-checks");
+  const summary=document.getElementById("mtf-summary");
+  if(!target||!summary)return;
+  const base=baseSignal?.signal;
+  const directional=["LONG_SETUP","SHORT_SETUP"].includes(base);
+  const rows=[{label:"5 MIN",data:baseSignal},...timeframeResults];
+  if(!directional){
+    summary.textContent="The 5-minute engine has no directional setup. Higher timeframes are shown for context only.";
+  }else{
+    const aligned=rows.filter(item=>item.data?.signal===base).length;
+    summary.textContent=aligned+" of 3 timeframes match the 5-minute "+(base==="LONG_SETUP"?"LONG":"SHORT")+" direction.";
+  }
+  target.innerHTML=rows.map(item=>{
+    const status=item.data?.signal;
+    const label=status==="LONG_SETUP"?"LONG":status==="SHORT_SETUP"?"SHORT":status==="WAIT"?"WAIT":status==="INSUFFICIENT_DATA"?"NOT ENOUGH DATA":"UNAVAILABLE";
+    const same=directional&&status===base;
+    const opposite=directional&&["LONG_SETUP","SHORT_SETUP"].includes(status)&&status!==base;
+    const cls=same?"check-pass":opposite?"check-fail":"muted";
+    const detail=item.data?.ema_9!=null&&item.data?.ema_21!=null
+      ?"EMA 9 "+money(item.data.ema_9)+" · EMA 21 "+money(item.data.ema_21)
+      :(item.error||"Signal unavailable");
+    return `<div class="mtf-row"><div><strong>${item.label}</strong><small>${detail}</small></div><strong class="${cls}">${label}</strong></div>`;
+  }).join("");
+}
+
+
 function renderEntryQuality(signal,bars){
   const scoreEl=document.getElementById("entry-score");
   const labelEl=document.getElementById("entry-quality-label");
@@ -211,11 +238,21 @@ async function refresh(){
       "Waiting for at least 30 candles.";
     document.getElementById("signal-time").textContent=signal.last_bar_time?"Last candle "+new Date(signal.last_bar_time).toLocaleString():"";
     renderSignalConfirmation(signal,chartBars);
+    const mtfResults=await Promise.all(["15Min","1Hour"].map(async timeframe=>{
+      try{
+        const data=await get("/signal?timeframe="+timeframe);
+        return {label:timeframe==="15Min"?"15 MIN":"1 HOUR",data};
+      }catch(error){
+        return {label:timeframe==="15Min"?"15 MIN":"1 HOUR",data:null,error:error.message};
+      }
+    }));
+    renderMTFConfirmation(signal,mtfResults);
     renderEntryQuality(signal,chartBars);
   }catch(error){
     document.getElementById("signal-value").textContent="ENGINE OFFLINE";
     document.getElementById("signal-detail").textContent="Signal error: "+error.message;
     renderSignalConfirmation(null,[]);
+    renderMTFConfirmation(null,[{label:"15 MIN",data:null},{label:"1 HOUR",data:null}]);
     renderEntryQuality(null,[]);
   }
 }
