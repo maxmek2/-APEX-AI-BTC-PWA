@@ -147,9 +147,11 @@ async function refresh(){
     document.getElementById("updated").textContent="Market error: "+error.message;
   }
 
+  let chartBars=[];
   try{
     const chart=await get("/market/bars?timeframe=5Min&limit=60");
-    renderChart(chart.bars);
+    chartBars=chart.bars||[];
+    renderChart(chartBars);
   }catch(error){
     document.getElementById("chart-meta").textContent="Chart error: "+error.message;
   }
