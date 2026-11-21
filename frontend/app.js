@@ -95,7 +95,7 @@ async function loadPaperEngineStatus(){
  if(!state)return;
  try{
   const s=await get("/paper/status");
-  state.textContent=s.order_submission_enabled?"EXECUTION AVAILABLE":"PREVIEW ONLY · LOCKED";
+  state.textContent=s.order_submission_enabled?"PAPER AUTO ENTRY ENABLED":"PREVIEW ONLY · AUTO ENTRY OFF";
   if(note)note.textContent=s.reason||"Paper-only execution safety status.";
  }catch(e){state.textContent="STATUS UNAVAILABLE";if(note)note.textContent=e.message;}
 }
