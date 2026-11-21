@@ -28,4 +28,6 @@ jobs:
           ALPACA_API_KEY: ""
           ALPACA_SECRET_KEY: ""
           ALPACA_BASE_URL: "https://paper-api.alpaca.markets"
-        run: pytest -q tests
+          PYTHONPATH: ${{ github.workspace }}
+        working-directory: ${{ github.workspace }}
+        run: python -m pytest -q tests
