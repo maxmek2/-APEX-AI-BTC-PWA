@@ -1,6 +1,6 @@
 # APEX AI BTC PWA
 
-Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca paper-account backend.
+Mobile-first BTC/USD scalping dashboard with secure Alpaca Paper monitoring and explicitly gated Paper execution.
 
 ## Current build: 1.0
 - iPhone-friendly installable PWA shell.
@@ -11,7 +11,7 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - Read-only historical backtest endpoint for a long-only EMA/ATR strategy; fetches paginated history up to 10,000 bars and reports page/history coverage diagnostics.
 - Paper execution safety status and risk-bounded BTC trade preview endpoints (preview only; no entry order is submitted).
 - Server-side BTC protective exit manager with explicit arm/disarm endpoints; starts DISARMED, manages only an existing BTC paper position, and never opens a position.
-- Automated execution and order submission remain OFF.
+- Paper Auto Entry is OFF by default and requires explicit authenticated enable; live trading is not implemented.
 
 ## Safety
 - Use Alpaca PAPER credentials only.
