@@ -111,3 +111,18 @@ Entry execution remains disabled. The exit manager can submit a market close for
 3. Optionally set `APEX_STATE_DB=/var/data/apex_state.sqlite3`.
 4. Keep the frontend session token in PWA Settings; never place Alpaca credentials in frontend code.
 5. After deployment, verify `/health`, authenticated Paper status, Auto Entry OFF, and Exit Manager DISARMED. Do not enable either control as part of smoke testing.
+
+
+## Stage 5 — Paper operations validation
+
+- `GET /api/paper/validation` is an authenticated, read-only reconciliation snapshot.
+- It checks the exact Alpaca Paper host, account status/equity, Auto Entry OFF, Exit Manager DISARMED, and absence of open BTC positions/orders.
+- It performs broker GET requests only. It does not submit, cancel, or close orders.
+- A CLEAN snapshot is not proof of fills, partial-fill handling, protective-exit reliability, restart recovery, or strategy profitability. Those require controlled Paper evidence and operator review.
+
+## Stage 6 — Live trading readiness assessment
+
+- `GET /api/live/readiness` reports outstanding readiness gates.
+- Live trading remains unsupported and hard-locked. There is no live broker adapter or live order route in this project.
+- The readiness report intentionally remains NOT_READY until strategy validation, controlled Paper lifecycle evidence, reliable exchange-native protection, production security/monitoring, and explicit authorization are independently satisfied.
+- Stage 6 work here is a safety/readiness assessment only; it does not enable real-money execution.
