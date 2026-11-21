@@ -45,7 +45,7 @@ Mobile-first BTC/USD scalping dashboard with secure Alpaca Paper monitoring and 
 - POST /api/paper/exit-manager/arm (requires an existing BTC paper position)
 - POST /api/paper/exit-manager/disarm
 
-Entry execution remains disabled. The exit manager can submit a market close for an existing BTC paper position only after explicit arming and only when a stop/target is crossed.
+Paper Auto Entry remains OFF by default and requires explicit authenticated activation. The Exit Manager can submit a market close for an existing BTC Paper position only after explicit arming or Auto Entry position detection and only when a stop/target is crossed.
 
 
 ## Backtest assumptions
