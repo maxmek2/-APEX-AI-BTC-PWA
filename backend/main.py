@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any
 import httpx
 from dotenv import load_dotenv
@@ -74,14 +75,49 @@ async def btc_market():
 
 @app.get("/api/market/bars")
 async def btc_bars(timeframe:str=Query("5Min",pattern="^(1Min|5Min|15Min|1Hour)$"),
-                   limit:int=Query(100,ge=30,le=500)):
-    data=await get_json(
-        f"{DATA}/v1beta3/crypto/us/bars",
-        {"symbols":"BTC/USD","timeframe":timeframe,"limit":limit,"sort":"desc"}
-    )
-    bars=data.get("bars",{}).get("BTC/USD",[])
-    bars=list(reversed(bars))  # Keep candles chronological after fetching newest first.
-    return {"symbol":"BTC/USD","timeframe":timeframe,"count":len(bars),"bars":bars}
+                   limit:int=Query(100,ge=30,le=5000)):
+    # Alpaca defaults historical crypto bars to the current UTC day when start
+    # is omitted. For hourly history, explicitly request a 180-day lookback so
+    # H1 indicators and derived H4 candles have enough completed history.
+    params={"symbols":"BTC/USD","timeframe":timeframe,"limit":min(limit,10000),"sort":"asc"}
+    if timeframe=="1Hour":
+        params["start"]=(datetime.now(timezone.utc)-timedelta(days=180)).isoformat().replace("+00:00","Z")
+
+    bars=[]
+    page_token=None
+    async with httpx.AsyncClient(timeout=30) as client:
+        while len(bars)<limit:
+            page_params=dict(params)
+            page_params["limit"]=min(10000,limit-len(bars))
+            if page_token:
+                page_params["page_token"]=page_token
+            if not KEY or not SECRET:
+                raise HTTPException(503,"Alpaca paper credentials are not configured on the server")
+            try:
+                response=await client.get(
+                    f"{DATA}/v1beta3/crypto/us/bars",
+                    headers=HEADERS,params=page_params
+                )
+                response.raise_for_status()
+                payload=response.json()
+            except httpx.HTTPStatusError as exc:
+                raise HTTPException(502,f"Alpaca API returned {exc.response.status_code}") from exc
+            except httpx.HTTPError as exc:
+                raise HTTPException(502,"Unable to reach Alpaca historical bars API") from exc
+
+            page=payload.get("bars",{}).get("BTC/USD",[])
+            bars.extend(page)
+            page_token=payload.get("next_page_token")
+            if not page_token or not page:
+                break
+
+    # Alpaca returns ascending bars here; deduplicate timestamps defensively.
+    unique={bar.get("t"):bar for bar in bars if bar.get("t")}
+    bars=[unique[key] for key in sorted(unique)]
+    return {
+        "symbol":"BTC/USD","timeframe":timeframe,"count":len(bars),"bars":bars,
+        "history_start":params.get("start"),"history_complete":len(bars)>=limit
+    }
 
 def ema(values:list[float],period:int)->float|None:
     if len(values)<period:
