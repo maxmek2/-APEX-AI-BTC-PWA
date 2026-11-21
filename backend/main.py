@@ -127,7 +127,7 @@ async def signal(timeframe:str=Query("5Min",pattern="^(1Min|5Min|15Min|1Hour)$")
 
 
 def ema_series(values:list[float],period:int)->list[float|None]:
-    out:[float|None]=[None]*len(values)
+    out: list[float | None]=[None]*len(values)
     if len(values)<period:
         return out
     value=sum(values[:period])/period
@@ -139,7 +139,7 @@ def ema_series(values:list[float],period:int)->list[float|None]:
     return out
 
 def atr_series(bars:list[dict],period:int=14)->list[float|None]:
-    out:[float|None]=[None]*len(bars)
+    out: list[float | None]=[None]*len(bars)
     if len(bars)<=period:
         return out
     ranges=[]
