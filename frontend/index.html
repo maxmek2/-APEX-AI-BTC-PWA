@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#07101d"><link rel="manifest" href="./manifest.webmanifest">
-<link rel="stylesheet" href="./styles.css?v=apex-v23">
+<link rel="stylesheet" href="./styles.css?v=apex-v24">
 <title>APEX AI Trading Robot</title>
 </head>
 <body><main class="app" id="dashboard">
@@ -46,4 +46,4 @@
 <section class="panel" id="readiness-panel"><div class="between"><h2>Stage 5 · Paper Validation</h2><button id="run-stage5" class="small-action" type="button">Run read-only checks</button></div><p class="muted">Checks Alpaca Paper account, open BTC orders/positions and confirms execution remains disabled.</p><div id="stage5-result" class="backtest-result">Not checked yet. Requires the APEX dashboard access token in Settings.</div><div class="divider"></div><div class="between"><h2>Stage 6 · Live Readiness</h2><button id="run-stage6" class="small-action" type="button">Check readiness</button></div><p class="muted">Assessment only. Live order execution is not implemented or enabled.</p><div id="stage6-result" class="backtest-result">Readiness has not been checked.</div></section><section class="panel" id="settings-panel"><h2>Settings</h2><div class="setting-row"><label for="paper-api-token">Paper API access token</label></div><input id="paper-api-token" type="password" autocomplete="off" placeholder="Enter the dashboard token configured on Render" style="width:100%;padding:12px;border-radius:8px;margin:8px 0;background:#101d2b;color:#fff;border:1px solid #38506a"><small class="muted">Stored for this browser session only. This is not your Alpaca API Key ID or Secret Key. Never paste Alpaca credentials here.</small><div class="setting-row"><span>Broker</span><b>Alpaca Paper</b></div><div class="setting-row"><span>Symbol</span><b>BTC/USD</b></div><div class="setting-row"><span>Strategy</span><b>EMA 9 / EMA 21 + ATR 14</b></div><div class="setting-row"><span>Refresh interval</span><b>30 seconds</b></div><div class="setting-row"><span>Automated execution</span><b class="danger-text">OFF · Disabled</b></div><div class="safety-note">Live trading is unsupported. Auto Entry is OFF by default and can only be enabled through the separate Paper Auto Entry controls. Exit Manager starts DISARMED.</div></section>
 <footer class="dashboard-footer">APEX AI · Trading Robot v1.0 · Alpaca Paper · Monitoring only</footer>
 <div class="action-bar"><button id="pause-monitor" type="button">Ⅱ Pause Monitor</button><button id="stop-monitor" type="button" class="stop-button">■ Stop Monitor</button><button id="view-report" type="button">▥ View Report</button></div>
-</main><script src="./app.js?v=apex-v25"></script></body></html>
+</main><script src="./app.js?v=apex-v26"></script></body></html>
