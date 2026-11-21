@@ -128,3 +128,13 @@ Entry execution remains disabled. The exit manager can submit a market close for
 - Live trading remains unsupported and hard-locked. There is no live broker adapter or live order route in this project.
 - The report intentionally remains NOT_READY until strategy validation, controlled Paper lifecycle evidence, reliable exchange-native protection, production security/monitoring, and explicit authorization are independently satisfied.
 - Stage 6 is an assessment only. It does not connect to a live broker, enable execution, or submit orders.
+
+
+## Chronological out-of-sample research (Stage 4)
+
+- `GET /api/backtest/walk-forward` evaluates the unchanged EMA9/EMA21 + ATR14 rules on a chronological training segment and a later holdout segment.
+- Default holdout assumptions: 70% training / 30% test, 0.25% estimated fee per side, and 5 bps adverse slippage per side. These are explicit research assumptions, not verified broker costs.
+- Indicator values use historical candles before the holdout boundary for warm-up, but holdout entries cannot occur before the first candle after the split.
+- Strategy parameters are fixed; the holdout is not optimized. The report includes separate training and out-of-sample metrics and a check for test-entry boundary leakage.
+- A single holdout is only an initial diagnostic. It does not certify robustness, profitability, or readiness; repeat evaluation across multiple market regimes and walk-forward windows.
+- The endpoint is read-only and never submits an order.
