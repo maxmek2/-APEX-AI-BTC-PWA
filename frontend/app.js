@@ -5,7 +5,7 @@ const $=id=>document.getElementById(id);
 const money=v=>Number.isFinite(Number(v))?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(v)):"—";
 const num=v=>Number.isFinite(Number(v))?Number(v):null;
 function text(id,value){const e=$(id);if(e)e.textContent=value;}
-function paperHeaders(path,extra={}){const headers={Accept:"application/json",...extra};if(path.includes("/paper/")){const token=sessionStorage.getItem("apexPaperToken")||"";if(token)headers.Authorization="Bearer "+token;}return headers;}
+function paperHeaders(path,extra={}){const headers={Accept:"application/json",...extra};if(path.includes("/paper/")||path==="/account"||path==="/positions"){const token=sessionStorage.getItem("apexPaperToken")||"";if(token)headers.Authorization="Bearer "+token;}return headers;}
 async function get(path){const r=await fetch(API+path,{headers:paperHeaders(path),cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status+" "+path);return r.json();}
 function setStatus(message,ok=false){text("connection",message);const e=$("connection");if(e)e.style.color=ok?"var(--green)":"#ffb17e";text("cloud-title",ok?"Robot Monitor Online":"Market Monitor");}
 function ema(values,p){if(values.length<p)return values.map(()=>null);const out=Array(values.length).fill(null);let v=values.slice(0,p).reduce((a,b)=>a+b,0)/p;out[p-1]=v;const alpha=2/(p+1);for(let i=p;i<values.length;i++){v=alpha*values[i]+(1-alpha)*v;out[i]=v;}return out;}
