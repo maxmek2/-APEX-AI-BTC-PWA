@@ -63,3 +63,15 @@ Entry execution remains disabled. The exit manager can submit a market close for
 - Auto Entry disables itself if equity falls 2% or more below the UTC-day starting equity.
 - When a BTC position is detected while Auto Entry is enabled, the server automatically arms the existing software-polled exit manager.
 - This is an experimental Paper-only controller. Market orders and server-polled exits can be affected by latency, fills, outages and slippage. It is not suitable for live trading without further verification.
+
+
+## Stage 4 safety hardening (2026-11-22)
+- Auto Entry rejects M5 signal bars older than 10 minutes or more than 30 seconds in the future.
+- Auto Entry rejects missing/stale Alpaca quotes; quote timestamps must be within 30 seconds.
+- The read-only dry-run reports separate freshness checks for the signal candle and quote. An old LONG_SETUP is not eligible.
+- Exit Manager validates protective levels against the actual average entry before evaluating a close.
+- Exit Manager disarms before submitting a close request to reduce duplicate close requests after timeouts; inspect Alpaca positions/orders after any close-request failure.
+- On backend startup, an existing BTC position is detected and the Exit Manager status reports RESTART_RECOVERY_REQUIRED. It does not pretend the position is protected and does not auto-close it.
+- These changes do not make software-polled exits exchange-native or guaranteed. Render downtime/restarts, network/API outages, gaps and slippage remain material risks.
+- Auto Entry and Exit Manager must remain OFF/DISARMED during verification. ENTRY_ELIGIBLE is only a read-only preflight, not proof that an order was safely filled or protected.
+- Stage 4 is not certified complete until automated tests, controlled Paper order/fill/partial-fill/rejection/restart recovery tests, and deployed smoke tests pass. No live trading is supported or authorized by this project.
