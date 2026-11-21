@@ -340,3 +340,86 @@ async def backtest(
 
 
 # Read-only foundation: no order-submission endpoint is implemented.
+
+
+# Paper execution safety layer (preview only).
+# Alpaca's current crypto order-class matrix supports simple orders only;
+# bracket/OCO exits are not supported for crypto. Therefore this build
+# deliberately refuses to submit BTC orders until reliable server-side
+# protective-exit management is implemented and verified.
+from pydantic import BaseModel, Field
+
+PAPER_API_ORIGIN = "https://paper-api.alpaca.markets"
+
+class PaperPreviewRequest(BaseModel):
+    timeframe: str = Field(default="5Min", pattern="^(5Min|15Min|1Hour)$")
+    risk_percent: float = Field(default=0.5, gt=0, le=1.0)
+    max_notional_usd: float = Field(default=10.0, gt=0, le=10.0)
+    stop_atr_multiple: float = Field(default=1.5, ge=1.0, le=3.0)
+    reward_risk: float = Field(default=2.0, ge=1.0, le=3.0)
+
+def _paper_only_configured() -> bool:
+    # Exact allow-list: never permit a live host or arbitrary configured URL.
+    return BASE == PAPER_API_ORIGIN
+
+@app.get("/api/paper/status")
+async def paper_execution_status():
+    return {
+        "mode": "paper" if _paper_only_configured() else "blocked",
+        "paper_host_verified": _paper_only_configured(),
+        "auto_enabled": False,
+        "order_submission_enabled": False,
+        "protective_exit_support": False,
+        "reason": "BTC crypto bracket/OCO exits are not supported by the current Alpaca crypto order-class matrix; execution stays disabled until a verified protective-exit manager exists.",
+        "symbol": "BTC/USD"
+    }
+
+@app.post("/api/paper/preview")
+async def paper_trade_preview(request: PaperPreviewRequest):
+    """Calculate a risk-bounded BTC long setup; this endpoint NEVER submits an order."""
+    if not _paper_only_configured():
+        raise HTTPException(403, "Paper host verification failed; execution preview blocked")
+    account_data = await get_json(f"{PAPER_API_ORIGIN}/v2/account")
+    equity = float(account_data.get("equity") or 0)
+    if equity <= 0:
+        raise HTTPException(409, "Paper account equity is unavailable")
+    positions_data = await get_json(f"{PAPER_API_ORIGIN}/v2/positions")
+    if any(p.get("symbol") == "BTCUSD" for p in positions_data):
+        raise HTTPException(409, "An existing BTC position is open; no additional entry preview")
+    signal_data = await signal(request.timeframe)
+    if signal_data.get("signal") != "LONG_SETUP":
+        return {
+            "approved": False, "signal": signal_data.get("signal", "WAIT"),
+            "reason": "No confirmed LONG_SETUP on the selected timeframe",
+            "order_submitted": False
+        }
+    entry = float(signal_data["last_close"])
+    volatility = float(signal_data["atr_14"])
+    if entry <= 0 or volatility <= 0:
+        raise HTTPException(409, "Invalid price or ATR; preview refused")
+    stop_distance = volatility * request.stop_atr_multiple
+    stop_price = entry - stop_distance
+    target_price = entry + stop_distance * request.reward_risk
+    risk_budget = equity * request.risk_percent / 100
+    risk_sized_notional = risk_budget * entry / stop_distance
+    notional = min(request.max_notional_usd, equity * 0.10, risk_sized_notional)
+    if stop_price <= 0 or notional < 1:
+        raise HTTPException(409, "Risk sizing is too small or stop price invalid")
+    return {
+        "approved": True,
+        "symbol": "BTC/USD",
+        "side": "buy",
+        "timeframe": request.timeframe,
+        "signal": signal_data["signal"],
+        "reference_entry_price": round(entry, 2),
+        "proposed_stop_price": round(stop_price, 2),
+        "proposed_take_profit_price": round(target_price, 2),
+        "atr_14": round(volatility, 2),
+        "risk_budget_usd": round(risk_budget, 4),
+        "proposed_notional_usd": round(notional, 2),
+        "max_notional_usd": request.max_notional_usd,
+        "account_equity_usd": round(equity, 2),
+        "order_submitted": False,
+        "execution_status": "PREVIEW_ONLY",
+        "warning": "Reference prices can move. Alpaca crypto does not support bracket/OCO exits in this integration, so no order can be submitted safely."
+    }
