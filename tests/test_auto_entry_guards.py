@@ -1,6 +1,9 @@
 """Regression tests for the Paper Auto Entry daily loss circuit breaker."""
 import asyncio
 
+import pytest
+from fastapi import HTTPException
+
 from backend import main
 
 
@@ -111,3 +114,102 @@ def test_auto_entry_caps_order_notional_to_broker_buying_power(monkeypatch):
     assert len(submitted) == 1
     assert submitted[0]["qty"] == "0.00004000"
     assert main._auto_entry["last_event"] == "PAPER_ENTRY_ORDER_SUBMITTED"
+
+
+def test_completed_bar_filter_excludes_current_in_progress_five_minute_candle():
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 11, 22, 12, 7, tzinfo=timezone.utc)
+    bars = [
+        {"t": (now - timedelta(minutes=7)).isoformat(), "c": 100},
+        {"t": (now - timedelta(minutes=2)).isoformat(), "c": 101},
+    ]
+    completed = main._completed_bars(bars, "5Min", now=now)
+    assert len(completed) == 1
+    assert completed[0]["c"] == 100
+
+
+def test_enable_auto_entry_rejects_existing_btc_open_order(monkeypatch):
+    monkeypatch.setattr(main, "_paper_only_configured", lambda: True)
+    monkeypatch.setitem(main._auto_entry, "enabled", False)
+    monkeypatch.setitem(main._exit_manager, "armed", False)
+
+    async def fake_paper_request(method, path, params=None, body=None):
+        if path == "/v2/account":
+            return {"status": "ACTIVE", "equity": "100", "buying_power": "100"}
+        if path == "/v2/positions":
+            return []
+        if path == "/v2/orders":
+            return [{"symbol": "BTC/USD", "status": "new"}]
+        raise AssertionError(path)
+
+    monkeypatch.setattr(main, "_paper_request", fake_paper_request)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(main.enable_auto_entry())
+    assert exc.value.status_code == 409
+    assert "order" in exc.value.detail.lower()
+    assert main._auto_entry["enabled"] is False
+
+
+def test_reenable_preserves_daily_count_cooldown_and_processed_candle(monkeypatch):
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(main, "_paper_only_configured", lambda: True)
+    monkeypatch.setitem(main._auto_entry, "enabled", False)
+    monkeypatch.setitem(main._auto_entry, "day_key", main._utc_day_key())
+    monkeypatch.setitem(main._auto_entry, "day_start_equity", 100.0)
+    monkeypatch.setitem(main._auto_entry, "trades_today", 2)
+    last_attempt = datetime.now(timezone.utc).isoformat()
+    monkeypatch.setitem(main._auto_entry, "last_entry_attempt", last_attempt)
+    monkeypatch.setitem(main._auto_entry, "last_signal_bar", "2026-11-22T12:00:00Z")
+    monkeypatch.setitem(main._exit_manager, "armed", False)
+
+    async def fake_paper_request(method, path, params=None, body=None):
+        if path == "/v2/account":
+            return {"status": "ACTIVE", "equity": "100", "buying_power": "100"}
+        if path == "/v2/positions":
+            return []
+        if path == "/v2/orders":
+            return []
+        raise AssertionError(path)
+
+    monkeypatch.setattr(main, "_paper_request", fake_paper_request)
+    result = asyncio.run(main.enable_auto_entry())
+
+    assert result["enabled"] is True
+    assert main._auto_entry["trades_today"] == 2
+    assert main._auto_entry["last_entry_attempt"] == last_attempt
+    assert main._auto_entry["last_signal_bar"] == "2026-11-22T12:00:00Z"
+    monkeypatch.setitem(main._auto_entry, "enabled", False)
+
+
+@pytest.mark.parametrize(
+    ("equity", "trades", "expected_message"),
+    [
+        (98.0, 0, "Daily loss limit"),
+        (100.0, 5, "Daily submitted-entry limit"),
+    ],
+)
+def test_reenable_cannot_reset_daily_loss_or_trade_cap(monkeypatch, equity, trades, expected_message):
+    monkeypatch.setattr(main, "_paper_only_configured", lambda: True)
+    monkeypatch.setitem(main._auto_entry, "enabled", False)
+    monkeypatch.setitem(main._auto_entry, "day_key", main._utc_day_key())
+    monkeypatch.setitem(main._auto_entry, "day_start_equity", 100.0)
+    monkeypatch.setitem(main._auto_entry, "trades_today", trades)
+    monkeypatch.setitem(main._exit_manager, "armed", False)
+
+    async def fake_paper_request(method, path, params=None, body=None):
+        if path == "/v2/account":
+            return {"status": "ACTIVE", "equity": str(equity), "buying_power": "100"}
+        if path == "/v2/positions":
+            return []
+        if path == "/v2/orders":
+            return []
+        raise AssertionError(path)
+
+    monkeypatch.setattr(main, "_paper_request", fake_paper_request)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(main.enable_auto_entry())
+    assert exc.value.status_code == 409
+    assert expected_message in exc.value.detail
+    assert main._auto_entry["enabled"] is False
