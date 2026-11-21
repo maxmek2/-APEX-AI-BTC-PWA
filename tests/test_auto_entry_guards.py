@@ -20,7 +20,7 @@ def test_auto_entry_disables_at_two_percent_daily_equity_loss(monkeypatch):
     async def fake_paper_request(method, path, params=None, body=None):
         calls.append((method, path, params, body))
         if path == "/v2/account":
-            return {"equity": "98.00", "buying_power": "100.00"}
+            return {"status": "ACTIVE", "equity": "98.00", "buying_power": "100.00"}
         raise AssertionError(f"Unexpected broker request: {method} {path}")
 
     monkeypatch.setattr(main, "_paper_request", fake_paper_request)
@@ -90,7 +90,7 @@ def test_auto_entry_caps_order_notional_to_broker_buying_power(monkeypatch):
 
     async def fake_paper_request(method, path, params=None, body=None):
         if path == "/v2/account":
-            return {"equity": "100", "buying_power": "2"}
+            return {"status": "ACTIVE", "equity": "100", "buying_power": "2"}
         if path == "/v2/positions":
             return []
         if method == "POST" and path == "/v2/orders":
