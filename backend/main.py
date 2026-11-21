@@ -836,3 +836,85 @@ async def disable_auto_entry():
     _auto_entry["enabled"] = False
     _auto_entry["last_event"] = "DISABLED_BY_USER"
     return await auto_entry_status()
+
+
+@app.get("/api/paper/auto-entry/dry-run")
+async def auto_entry_dry_run():
+    """Read-only preflight of Auto Entry eligibility. Never submits orders or mutates state."""
+    if not _paper_only_configured():
+        raise HTTPException(403, "Only the exact Alpaca Paper API host is allowed")
+    account = await _paper_request("GET", "/v2/account")
+    equity = float(account.get("equity") or 0)
+    buying_power = float(account.get("buying_power") or 0)
+    positions = await _paper_request("GET", "/v2/positions")
+    btc_position = next((p for p in positions if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
+    orders = await _paper_request("GET", "/v2/orders", {"status": "open", "limit": 100})
+    btc_order = next((o for o in orders if str(o.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
+    signal_data = await signal("5Min")
+    quote_data = await get_json(f"{DATA}/v1beta3/crypto/us/latest/quotes", {"symbols": "BTC/USD"})
+    quote = quote_data.get("quotes", {}).get("BTC/USD", {})
+    ask = float(quote.get("ap") or 0)
+    volatility = float(signal_data.get("atr_14") or 0)
+
+    checks = []
+    def add_check(name: str, passed: bool, detail: str):
+        checks.append({"check": name, "passed": bool(passed), "detail": detail})
+
+    add_check("paper_host", _paper_only_configured(), "Exact Alpaca Paper API host allow-list")
+    add_check("account_equity", equity > 0, f"Equity USD {equity:.2f}")
+    add_check("buying_power", buying_power > 0, f"Buying power USD {buying_power:.2f}")
+    add_check("no_existing_btc_position", btc_position is None, "No open BTC position" if btc_position is None else "BTC position already open")
+    add_check("no_existing_btc_order", btc_order is None, "No open BTC order" if btc_order is None else "Open BTC order already exists")
+    add_check("long_signal", signal_data.get("signal") == "LONG_SETUP", f"Signal: {signal_data.get('signal', 'UNKNOWN')}")
+    add_check("valid_ask", ask > 0, f"Latest ask USD {ask:.2f}")
+    add_check("valid_atr", volatility > 0, f"ATR(14) USD {volatility:.2f}")
+
+    bar_time = signal_data.get("last_bar_time")
+    same_bar = bool(bar_time and bar_time == _auto_entry.get("last_signal_bar"))
+    add_check("new_signal_bar", not same_bar and bool(bar_time), "New M5 candle" if not same_bar and bar_time else "Missing or already processed M5 candle")
+
+    cooldown_ok = True
+    last_attempt = _auto_entry.get("last_entry_attempt")
+    if last_attempt:
+        elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(last_attempt)).total_seconds()
+        cooldown_ok = elapsed >= _auto_entry["cooldown_seconds"]
+    add_check("cooldown", cooldown_ok, "Cooldown complete" if cooldown_ok else "15-minute cooldown still active")
+
+    daily_baseline = _auto_entry.get("day_start_equity")
+    daily_loss_known = daily_baseline is not None
+    daily_loss_ok = True
+    if daily_loss_known and equity > 0:
+        daily_loss_ok = equity > float(daily_baseline) * (1 - _auto_entry["daily_loss_limit_fraction"])
+    add_check("daily_loss_guard", daily_loss_ok, "Within 2% daily loss limit" if daily_loss_known else "Baseline not initialized while Auto Entry is OFF; will initialize on enable")
+
+    stop_distance = volatility * 1.5
+    stop_price = ask - stop_distance if ask > 0 and volatility > 0 else 0
+    risk_budget = equity * _auto_entry["risk_fraction"] if equity > 0 else 0
+    risk_notional = risk_budget * ask / stop_distance if ask > 0 and stop_distance > 0 else 0
+    notional = min(_auto_entry["max_notional_usd"], equity * _auto_entry["max_equity_fraction"], risk_notional) if equity > 0 else 0
+    if buying_power > 0:
+        notional = min(notional, buying_power)
+    add_check("valid_stop", stop_price > 0, f"Calculated stop USD {stop_price:.2f}")
+    add_check("minimum_order_size", notional >= 1.0, f"Risk-sized notional USD {notional:.2f}; minimum USD 1.00")
+
+    eligible = all(item["passed"] for item in checks)
+    return {
+        "mode": "PAPER_DRY_RUN",
+        "result": "ENTRY_ELIGIBLE" if eligible else "ENTRY_BLOCKED",
+        "auto_entry_enabled": bool(_auto_entry["enabled"]),
+        "signal": signal_data.get("signal"),
+        "timeframe": "5Min",
+        "last_bar_time": bar_time,
+        "reference_ask": round(ask, 2) if ask else None,
+        "atr_14": round(volatility, 2) if volatility else None,
+        "proposed_notional_usd": round(notional, 2),
+        "proposed_quantity_btc": round(notional / ask, 8) if ask > 0 else 0,
+        "proposed_stop_price": round(stop_price, 2) if stop_price > 0 else None,
+        "proposed_take_profit_price": round(ask + stop_distance * 2, 2) if ask > 0 and stop_distance > 0 else None,
+        "checks": checks,
+        "order_submitted": False,
+        "alpaca_write_api_called": False,
+        "auto_entry_state_changed": False,
+        "exit_manager_state_changed": False,
+        "safety": "Read-only preflight. Uses market/account reads only; no order submission."
+    }
