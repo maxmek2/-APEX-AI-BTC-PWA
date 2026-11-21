@@ -549,6 +549,18 @@ async def _exit_manager_loop():
 @app.on_event("startup")
 async def start_exit_manager():
     global _exit_task
+    # After a process restart, in-memory protection state is lost. Detect an
+    # existing BTC position and expose a loud recovery warning; never silently
+    # claim it is protected or auto-close it without operator review.
+    if _paper_only_configured() and KEY and SECRET:
+        try:
+            positions = await _paper_request("GET", "/v2/positions")
+            btc = next((p for p in positions
+                        if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
+            if btc:
+                _exit_manager["last_event"] = "RESTART_RECOVERY_REQUIRED_EXISTING_BTC_POSITION"
+        except Exception as exc:
+            _exit_manager["last_event"] = "STARTUP_RECONCILIATION_FAILED: " + str(exc)[:120]
     _exit_task = asyncio.create_task(_exit_manager_loop())
 
 @app.on_event("shutdown")
