@@ -124,7 +124,7 @@ async function loadAutoEntryStatus(){
   const data=await get("/paper/auto-entry");
   const enabled=Boolean(data.enabled&&data.order_submission_enabled);
   state.textContent=enabled?"ENABLED · PAPER":"OFF";
-  state.className="tag "+(enabled?"danger":"neutral");
+  state.className="tag "+(enabled?"check-fail":"neutral");
   if(out)out.textContent="Mode: "+data.mode+" · Auto Entry: "+(enabled?"ON":"OFF")+" · Today: "+data.trades_today+"/"+data.daily_trade_count_limit+" entries · Last event: "+(data.last_event||"—");
   const enable=$("auto-entry-enable"),disable=$("auto-entry-disable");
   if(enable)enable.disabled=enabled;
