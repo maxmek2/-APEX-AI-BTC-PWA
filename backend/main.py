@@ -354,12 +354,19 @@ async def backtest(
             "estimated_fees_usd":round(fees,4),"net_pnl_usd":round(gross-fees,4)
         })
 
-    net_values=[item["net_pnl_usd"] for item in trades]
-    winners=[value for value in net_values if value>0]
-    losers=[value for value in net_values if value<=0]
+    # Separate gross trading edge from fee-adjusted results. A zero-PnL
+    # trade is neither a win nor a loss; fees are already included in net PnL.
+    gross_values=[float(item["gross_pnl_usd"]) for item in trades]
+    fee_values=[float(item["estimated_fees_usd"]) for item in trades]
+    net_values=[float(item["net_pnl_usd"]) for item in trades]
+    gross_profit=sum(value for value in gross_values if value>0)
+    gross_loss=-sum(value for value in gross_values if value<0)
+    net_profit=sum(value for value in net_values if value>0)
+    net_loss=-sum(value for value in net_values if value<0)
+    wins=sum(1 for value in net_values if value>0)
+    losses=sum(1 for value in net_values if value<0)
+    breakeven=sum(1 for value in net_values if value==0)
     net_total=sum(net_values)
-    gross_wins=sum(winners)
-    gross_losses=-sum(losers)
     equity=starting_equity
     peak=starting_equity
     max_drawdown=0.0
@@ -368,6 +375,8 @@ async def backtest(
         peak=max(peak,equity)
         if peak>0:
             max_drawdown=max(max_drawdown,(peak-equity)/peak*100)
+    gross_profit_factor=(gross_profit/gross_loss) if gross_loss>0 else (None if gross_profit==0 else float("inf"))
+    net_profit_factor=(net_profit/net_loss) if net_loss>0 else (None if net_profit==0 else float("inf"))
 
     return {
         "symbol":"BTC/USD","timeframe":timeframe,"bars_used":len(bars),
@@ -387,11 +396,13 @@ async def backtest(
             "starting_equity_usd":round(starting_equity,2),
             "ending_equity_usd":round(equity,2),
             "net_pnl_usd":round(net_total,4),
-            "gross_pnl_usd":round(sum(item["gross_pnl_usd"] for item in trades),4),
-            "estimated_fees_usd":round(sum(item["estimated_fees_usd"] for item in trades),4),
-            "trades":len(trades),"wins":len(winners),"losses":len(losers),
-            "win_rate_percent":round(len(winners)/len(trades)*100,2) if trades else 0,
-            "profit_factor":round(gross_wins/gross_losses,4) if gross_losses else None,
+            "gross_pnl_usd":round(sum(gross_values),4),
+            "estimated_fees_usd":round(sum(fee_values),4),
+            "trades":len(trades),"wins":wins,"losses":losses,"breakeven_trades":breakeven,
+            "win_rate_percent":round(wins/len(trades)*100,2) if trades else 0,
+            "profit_factor":round(gross_profit_factor,4) if gross_profit_factor is not None and gross_profit_factor != float("inf") else ("infinite" if gross_profit_factor == float("inf") else None),
+            "gross_profit_factor":round(gross_profit_factor,4) if gross_profit_factor is not None and gross_profit_factor != float("inf") else ("infinite" if gross_profit_factor == float("inf") else None),
+            "net_profit_factor":round(net_profit_factor,4) if net_profit_factor is not None and net_profit_factor != float("inf") else ("infinite" if net_profit_factor == float("inf") else None),
             "max_drawdown_percent":round(max_drawdown,2),
             "average_net_per_trade_usd":round(net_total/len(trades),4) if trades else 0
         },
