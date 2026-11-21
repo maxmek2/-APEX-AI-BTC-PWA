@@ -42,7 +42,9 @@ from starlette.responses import JSONResponse
 
 @app.middleware("http")
 async def protect_paper_api(request, call_next):
-    if request.url.path.startswith("/api/paper/") and request.method != "OPTIONS":
+    protected_read_paths = {"/api/account", "/api/positions"}
+    requires_token = request.url.path.startswith("/api/paper/") or request.url.path in protected_read_paths
+    if requires_token and request.method != "OPTIONS":
         expected = os.getenv("APEX_API_TOKEN", "").strip()
         if not expected:
             return JSONResponse(status_code=503, content={"detail": "Paper API locked: configure APEX_API_TOKEN on the backend"})
