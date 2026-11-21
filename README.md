@@ -92,3 +92,22 @@ Entry execution remains disabled. The exit manager can submit a market close for
 - Exit Manager now rejects stale/future latest-trade timestamps and checks whether the position remains after a close request. A remaining position is flagged for inspection; it is not automatically retried.
 - Automated tests cover deterministic exit decisions and API token access only. They do not simulate Alpaca fills, rejections, partial closes, network timeouts, Render restarts, or actual deployed behavior.
 - No order was submitted by these code changes. Paper execution remains unverified and must stay disabled.
+
+
+## Persistent runtime state and restart recovery
+
+- Auto Entry and Exit Manager operational context is stored in SQLite at `APEX_STATE_DB`; default path is `/var/data/apex_state.sqlite3`.
+- **Render requirement:** attach a persistent disk to the backend service and mount it at `/var/data`. Without that disk, the container filesystem may be ephemeral and saved state can be lost on redeploy/restart.
+- The service snapshots state every five seconds. A sudden crash can lose the latest unsaved interval.
+- On every restart, Auto Entry is forced OFF and Exit Manager is forced DISARMED, even when their prior state was enabled/armed. Restored protective levels and order references are for operator inspection only; they are not treated as active protection.
+- If state restoration or persistence fails, both execution controls are forced off/disarmed and an error event is recorded.
+- This local SQLite design assumes a single backend instance writing to one mounted disk. Do not scale the service to multiple instances or attach the same SQLite file to concurrent writers. A managed PostgreSQL database is the better future option for multi-instance deployment.
+- The operator must still reconcile Alpaca positions and open orders after restart. Persistence is not a substitute for broker reconciliation or exchange-native protection.
+
+## Required Render deployment configuration
+
+1. Add `APEX_API_TOKEN` as a long random secret environment variable.
+2. Attach a persistent disk to the backend and mount it at `/var/data`.
+3. Optionally set `APEX_STATE_DB=/var/data/apex_state.sqlite3`.
+4. Keep the frontend session token in PWA Settings; never place Alpaca credentials in frontend code.
+5. After deployment, verify `/health`, authenticated Paper status, Auto Entry OFF, and Exit Manager DISARMED. Do not enable either control as part of smoke testing.
