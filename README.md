@@ -2,7 +2,7 @@
 
 Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca paper-account backend.
 
-## Current build: 0.7
+## Current build: 0.8
 - iPhone-friendly installable PWA shell.
 - Alpaca paper account equity and buying power endpoint.
 - Latest BTC/USD trade endpoint.
@@ -30,7 +30,7 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - GET /api/market/btc
 - GET /api/market/bars?timeframe=5Min&limit=100 (newest candles, returned chronologically)
 - GET /api/signal?timeframe=5Min
-- GET /api/backtest?timeframe=5Min&limit=2000&starting_equity=100&notional_usd=10\n- GET /api/paper/status\n- POST /api/paper/preview (JSON: timeframe, risk_percent, max_notional_usd, stop_atr_multiple, reward_risk)\n- GET /api/paper/exit-manager\n- POST /api/paper/exit-manager/simulate (pure deterministic SL/TP test; no Alpaca calls or state changes)\n- POST /api/paper/exit-manager/arm (requires an existing BTC paper position)\n- POST /api/paper/exit-manager/disarm
+- GET /api/backtest?timeframe=5Min&limit=2000&starting_equity=100&notional_usd=10\n- GET /api/paper/status\n- POST /api/paper/preview (JSON: timeframe, risk_percent, max_notional_usd, stop_atr_multiple, reward_risk)\n- GET /api/paper/exit-manager\n- POST /api/paper/exit-manager/simulate (pure deterministic SL/TP test; no Alpaca calls or state changes)\n- POST /api/paper/lifecycle/simulate (simulated entry → position detection → protective levels → HOLD/SL/TP exit; no Alpaca calls or orders)\n- POST /api/paper/exit-manager/arm (requires an existing BTC paper position)\n- POST /api/paper/exit-manager/disarm
 
 Entry execution remains disabled. The exit manager can submit a market close for an existing BTC paper position only after explicit arming and only when a stop/target is crossed.
 
@@ -53,3 +53,4 @@ Entry execution remains disabled. The exit manager can submit a market close for
 - Daily realized P&L, win rate, and drawdown remain unavailable until verified fill-history accounting is implemented; the UI intentionally does not fabricate them.
 - Pause Monitor, Stop Monitor, and View Report control dashboard monitoring/report display only. They do not pause or stop a trading bot.
 - Entry automation remains OFF. The server-side exit manager is DISARMED by default.\n- Exit manager polls the latest BTC trade every 5 seconds while armed; on stop/target trigger it requests liquidation of the BTCUSD position using Alpaca Paper DELETE /v2/positions/BTCUSD.\n- This is a software-managed exit, not an exchange-native stop. Render sleep/restarts, network outages, market-data delays and slippage can cause missed or late exits. Do not rely on it as guaranteed protection.\n- Manager state is in-memory and resets on server restart; after restart it is disarmed and must be inspected/re-armed manually.\n- Alpaca crypto bracket/OCO exits are not available in this integration. Close-position endpoint reference: https://docs.alpaca.markets/us/reference/deleteopenposition-1.
+\n\n## Lifecycle simulation\n- The lifecycle simulator is entirely in-memory and accepts an entry price, ATR(14), and a sequence of simulated prices.\n- It calculates a long-only stop at 1.5 × ATR and target at 3.0 × ATR from entry (2R).\n- It does not create a broker position, call Alpaca, or change Exit Manager state.\n
