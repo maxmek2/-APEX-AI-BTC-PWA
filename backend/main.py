@@ -256,7 +256,7 @@ def _backtest_exit_for_candle(position: dict, candle: dict) -> tuple[float, str]
 
 def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
                          notional_usd: float = 10.0, fee_rate: float = 0.0025,
-                         slippage_bps: float = 0.0) -> dict:
+                         slippage_bps: float = 0.0, start_index: int = 21) -> dict:
     """Deterministic long-only close-signal/next-open-fill OHLC backtest.
 
     Fees apply to executed notional on entry and exit. Slippage is an adverse
@@ -264,6 +264,8 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
     """
     if len(bars) < 50:
         raise ValueError("At least 50 candles are required")
+    if not isinstance(start_index, int) or start_index < 21 or start_index >= len(bars) - 1:
+        raise ValueError("start_index must be an integer from 21 through len(bars)-2")
     if starting_equity <= 0 or notional_usd <= 0 or fee_rate < 0 or slippage_bps < 0:
         raise ValueError("Equity/notional must be positive; fee and slippage must be non-negative")
     slip = slippage_bps / 10000.0
@@ -291,7 +293,10 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
         position = None
 
     # Signal is known only at candle close; fill is the following candle open.
-    for i in range(21, len(bars)-1):
+    # Indicators retain their full pre-test warm-up history, while entries
+    # are permitted only from start_index onward. This supports honest
+    # chronological out-of-sample evaluation without indicator look-ahead.
+    for i in range(start_index, len(bars)-1):
         if position is not None:
             hit = _backtest_exit_for_candle(position, bars[i])
             if hit:
@@ -444,6 +449,75 @@ async def backtest(
         "metrics":metrics,"recent_trades":trades[-20:],
         "status":"historical_simulation_not_a_live_result","automated_execution":False,
         "warning":"Fee rate is configurable and remains an estimate, not a verified Alpaca fee. Slippage is a user-supplied adverse-price assumption, not measured market impact. OHLC candles cannot reveal intrabar order; stop is assumed first when both levels are touched. Results are historical simulations, not a promise of future performance."
+    }
+
+
+@app.get("/api/backtest/walk-forward")
+async def walk_forward_backtest(
+    timeframe: str = Query("5Min", pattern="^(1Min|5Min|15Min|1Hour)$"),
+    limit: int = Query(2000, ge=300, le=10000),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+    train_fraction: float = Query(0.70, ge=0.60, le=0.80),
+):
+    """Chronological fixed-strategy train/test report; never submits orders."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 300:
+        return {
+            "symbol": "BTC/USD", "status": "insufficient_data",
+            "bars_used": len(bars), "minimum_required": 300,
+            "automated_execution": False, "order_submitted": False,
+        }
+    split = int(len(bars) * train_fraction)
+    if split < 100 or len(bars) - split < 50:
+        raise HTTPException(422, "Insufficient candles in chronological train/test segments")
+    # Training ends on the split candle. Test signals begin at that candle's
+    # close and can only fill on the following candle's open.
+    train_bars = bars[:split + 1]
+    train = run_ema_atr_backtest(
+        train_bars, starting_equity, notional_usd, fee_rate, slippage_bps
+    )
+    test = run_ema_atr_backtest(
+        bars, starting_equity, notional_usd, fee_rate, slippage_bps,
+        start_index=split,
+    )
+    test_entries = [t for t in test["trades"] if t.get("entry_time")]
+    first_test_fill = bars[split + 1].get("t")
+    leakage_free = all(t["entry_time"] >= first_test_fill for t in test_entries)
+    return {
+        "symbol": "BTC/USD", "timeframe": timeframe,
+        "status": "chronological_fixed_strategy_evaluation",
+        "bars_used": len(bars), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "split": {
+            "method": "chronological", "train_fraction": train_fraction,
+            "train_bars": len(train_bars), "test_bars": len(bars) - split - 1,
+            "train_from": bars[0].get("t"), "train_to": bars[split].get("t"),
+            "test_signal_from": bars[split].get("t"),
+            "first_possible_test_fill": first_test_fill,
+            "test_to": bars[-1].get("t"),
+        },
+        "assumptions": {
+            "strategy": "Fixed EMA9 > EMA21 and close > EMA9; next-candle-open entry; SL 1.5x ATR14; TP 2.0x ATR14",
+            "fee_per_side_percent": fee_rate * 100,
+            "slippage_bps_per_side": slippage_bps,
+            "same_candle_policy": "STOP_LOSS_FIRST",
+            "test_starts_flat": True,
+            "parameters_optimized_on_test": False,
+        },
+        "train_metrics": train["metrics"],
+        "out_of_sample_metrics": test["metrics"],
+        "checks": {
+            "chronological_split": True,
+            "test_entries_after_split": leakage_free,
+            "test_parameters_untuned": True,
+        },
+        "interpretation": "Research diagnostic only. One chronological holdout is not proof of robustness; repeat across market regimes and walk-forward windows before considering strategy validation.",
+        "automated_execution": False, "order_submitted": False,
+        "alpaca_write_api_called": False,
     }
 
 
