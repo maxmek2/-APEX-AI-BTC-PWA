@@ -79,3 +79,37 @@ def test_slippage_is_charged_adversely_on_entry_and_exit():
     assert slipped["metrics"]["estimated_slippage_usd"] > 0
     assert slipped["metrics"]["net_pnl_usd"] < baseline["metrics"]["net_pnl_usd"]
     assert "exit_breakdown" in slipped["metrics"]
+
+
+
+def test_out_of_sample_start_index_blocks_training_period_entries():
+    bars = []
+    for i in range(100):
+        price = 100.0 + i * 0.5
+        bars.append({
+            "t": f"2026-11-01T{i // 60:02d}:{i % 60:02d}:00Z",
+            "o": price, "h": price + 0.6, "l": price - 0.6,
+            "c": price + 0.4, "v": 1,
+        })
+
+    split = 70
+    result = run_ema_atr_backtest(bars, start_index=split)
+    first_possible_fill = bars[split + 1]["t"]
+    assert result["trades"]
+    assert all(trade["entry_time"] >= first_possible_fill for trade in result["trades"])
+
+
+def test_out_of_sample_start_index_must_leave_a_fill_candle():
+    import pytest
+
+    bars = []
+    for i in range(60):
+        price = 100.0 + i * 0.5
+        bars.append({
+            "t": f"2026-11-01T{i // 60:02d}:{i % 60:02d}:00Z",
+            "o": price, "h": price + 0.6, "l": price - 0.6,
+            "c": price + 0.4, "v": 1,
+        })
+
+    with pytest.raises(ValueError, match="start_index"):
+        run_ema_atr_backtest(bars, start_index=len(bars) - 1)
