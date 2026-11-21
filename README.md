@@ -75,3 +75,20 @@ Entry execution remains disabled. The exit manager can submit a market close for
 - These changes do not make software-polled exits exchange-native or guaranteed. Render downtime/restarts, network/API outages, gaps and slippage remain material risks.
 - Auto Entry and Exit Manager must remain OFF/DISARMED during verification. ENTRY_ELIGIBLE is only a read-only preflight, not proof that an order was safely filled or protected.
 - Stage 4 is not certified complete until automated tests, controlled Paper order/fill/partial-fill/rejection/restart recovery tests, and deployed smoke tests pass. No live trading is supported or authorized by this project.
+
+
+## Paper API access protection (Stage 4)
+
+- Every `/api/paper/*` route requires `Authorization: Bearer <token>`.
+- Set a long, random `APEX_API_TOKEN` environment variable on the Render backend service before using Paper status or preview features. If it is missing, Paper routes fail closed with HTTP 503; an invalid/missing browser token returns HTTP 401.
+- In the PWA Settings, enter the same token in **Paper API access token**. It is held in browser session storage and is not committed to frontend JavaScript. Never enter Alpaca API credentials in the PWA.
+- Keep Auto Entry OFF and Exit Manager DISARMED. This token protects access; it does not authorize or activate execution by itself.
+- The API token is a shared bearer secret. Rotate it in Render and update the PWA session entry if it is exposed. For production-grade multi-user access, replace the shared token with a proper login/session system and rate limiting.
+
+## Remaining Stage 4 verification gates
+
+- Persistent state and deterministic restart recovery are not yet implemented. Current Auto Entry and Exit Manager state remains in process memory; after restart, inspect the broker account and open orders manually.
+- Partial-fill handling is fail-closed when an open BTC order is detected alongside a position; automated cancel/replace and complete order lifecycle reconciliation are not implemented.
+- Exit Manager now rejects stale/future latest-trade timestamps and checks whether the position remains after a close request. A remaining position is flagged for inspection; it is not automatically retried.
+- Automated tests cover deterministic exit decisions and API token access only. They do not simulate Alpaca fills, rejections, partial closes, network timeouts, Render restarts, or actual deployed behavior.
+- No order was submitted by these code changes. Paper execution remains unverified and must stay disabled.
