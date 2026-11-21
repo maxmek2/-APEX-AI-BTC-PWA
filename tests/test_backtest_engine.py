@@ -113,3 +113,35 @@ def test_out_of_sample_start_index_must_leave_a_fill_candle():
 
     with pytest.raises(ValueError, match="start_index"):
         run_ema_atr_backtest(bars, start_index=len(bars) - 1)
+
+
+def test_walk_forward_endpoint_returns_separate_train_and_holdout_metrics(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend import main
+
+    bars = []
+    for i in range(320):
+        price = 100.0 + i * 0.5
+        bars.append({
+            "t": f"2026-11-{1 + i // 1440:02d}T{i // 60 % 24:02d}:{i % 60:02d}:00Z",
+            "o": price, "h": price + 0.6, "l": price - 0.6,
+            "c": price + 0.4, "v": 1,
+        })
+
+    async def fake_fetch(timeframe, limit):
+        return bars[:limit], False, 1
+
+    monkeypatch.setattr(main, "fetch_backtest_bars", fake_fetch)
+    with TestClient(main.app) as client:
+        response = client.get("/api/backtest/walk-forward?limit=320")
+
+    assert response.status_code == 200
+    report = response.json()
+    assert report["status"] == "chronological_fixed_strategy_evaluation"
+    assert report["train_metrics"]["trades"] >= 0
+    assert report["out_of_sample_metrics"]["trades"] >= 0
+    assert report["checks"]["chronological_split"] is True
+    assert report["checks"]["test_entries_after_split"] is True
+    assert report["checks"]["test_parameters_untuned"] is True
+    assert report["order_submitted"] is False
+    assert report["alpaca_write_api_called"] is False
