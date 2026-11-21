@@ -29,12 +29,36 @@ function showConnection(message,ok=false){
 function renderChart(bars){
   const svg=document.getElementById("price-chart");
   if(!svg||!bars?.length)return;
-  const values=bars.map(b=>Number(b.c)).filter(Number.isFinite);
-  if(!values.length)return;
-  const low=Math.min(...values),high=Math.max(...values),range=high-low||1;
-  const points=values.map((v,i)=>`${(i/(values.length-1||1))*580+10},${165-((v-low)/range)*145}`).join(" ");
-  svg.innerHTML=`<polyline points="${points}" fill="none" stroke="#35d49a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
-  document.getElementById("chart-meta").textContent=`${values.length} recent 5-minute candles · range ${money(low)} – ${money(high)}`;
+
+  // Use full OHLC values to draw real candlesticks, not a close-price line.
+  const candles=bars.map(bar=>({
+    o:Number(bar.o),h:Number(bar.h),l:Number(bar.l),c:Number(bar.c)
+  })).filter(bar=>[bar.o,bar.h,bar.l,bar.c].every(Number.isFinite));
+  if(!candles.length)return;
+
+  const low=Math.min(...candles.map(bar=>bar.l));
+  const high=Math.max(...candles.map(bar=>bar.h));
+  const range=high-low||1;
+  const left=10,right=590,top=10,bottom=170;
+  const y=value=>bottom-((value-low)/range)*(bottom-top);
+  const step=(right-left)/candles.length;
+  const bodyWidth=Math.max(2,Math.min(7,step*0.62));
+
+  const shapes=candles.map((bar,index)=>{
+    const x=left+step*(index+0.5);
+    const rising=bar.c>=bar.o;
+    const color=rising?"#35d49a":"#ff6b78";
+    const bodyTop=Math.min(y(bar.o),y(bar.c));
+    const bodyHeight=Math.max(1.5,Math.abs(y(bar.o)-y(bar.c)));
+    return `<g stroke="${color}" fill="${color}">
+      <line x1="${x}" y1="${y(bar.h)}" x2="${x}" y2="${y(bar.l)}" stroke-width="1.4"/>
+      <rect x="${x-bodyWidth/2}" y="${bodyTop}" width="${bodyWidth}" height="${bodyHeight}" rx="0.7"/>
+    </g>`;
+  }).join("");
+
+  svg.innerHTML=shapes;
+  document.getElementById("chart-meta").textContent=
+    `${candles.length} recent 5-minute candlesticks · range ${money(low)} – ${money(high)} · green = up, red = down`;
 }
 
 async function refresh(){
