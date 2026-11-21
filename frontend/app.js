@@ -1,4 +1,6 @@
 const API=window.APEX_API_BASE||"https://apex-ai-btc-pwa.onrender.com/api";
+let selectedTimeframe="5Min";
+const timeframeLabels={1Min:"1m",5Min:"5m",15Min:"15m",1Hour:"1h"};
 const money=value=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(value||0));
 
 async function get(path){
@@ -66,10 +68,10 @@ function renderChart(bars){
   const low=rawLow-padding;
   const high=rawHigh+padding;
   const range=high-low||1;
-  const left=10,right=590,top=25,bottom=165;
+  const left=12,right=888,top=34,bottom=300;
   const y=value=>bottom-((value-low)/range)*(bottom-top);
   const step=(right-left)/candles.length;
-  const bodyWidth=Math.max(2,Math.min(7,step*0.62));
+  const bodyWidth=Math.max(2,Math.min(11,step*0.62));
 
   const shapes=candles.map((bar,index)=>{
     const x=left+step*(index+0.5);
@@ -96,9 +98,10 @@ function renderChart(bars){
       <text x="145" y="15" fill="#c4d0df">ATR 14: ${atr14==null?"—":money(atr14)}</text>
     </g>`;
 
-  svg.innerHTML=shapes+overlays;
-  document.getElementById("chart-meta").textContent=
-    `${candles.length} recent 5-minute candles · EMA 9 (yellow) · EMA 21 (blue) · ATR 14: ${atr14==null?"need 14 candles":money(atr14)}`;
+  svg.innerHTML=`<g stroke="#203149" stroke-width="1">${[70,125,180,235,300].map(yv=>`<line x1="0" y1="${yv}" x2="900" y2="${yv}"/>`).join("")}</g>`+shapes+overlays;
+  document.getElementById("chart-meta").textContent=`${candles.length} ${timeframeLabels[selectedTimeframe]||"5m"} candles · ATR 14: ${atr14==null?"need 14 candles":money(atr14)}`;
+  const chartLabel=document.getElementById("chart-time-label");if(chartLabel)chartLabel.textContent=timeframeLabels[selectedTimeframe]||"5m";
+  const atrMini=document.getElementById("atr-mini");if(atrMini)atrMini.textContent=atr14==null?"—":money(atr14);
 }
 
 function renderSignalConfirmation(signal,bars){
@@ -255,12 +258,21 @@ async function refresh(){
     const account=await get("/account");
     document.getElementById("equity").textContent=money(account.equity);
     document.getElementById("buying").textContent=money(account.buying_power);
+    const cash=document.getElementById("cash");if(cash)cash.textContent=money(account.cash);
+    const status=document.getElementById("account-status");if(status)status.textContent=account.status||"Connected";
     showConnection("ACCOUNT CONNECTED · PAPER",true);
     accountConnected=true;
   }catch(error){
     showConnection("API ERROR · "+error.message);
   }
 
+  try{
+    const positions=await get("/positions");
+    const list=document.getElementById("positions-list");
+    const count=document.getElementById("position-count");
+    if(count)count.textContent=String(positions.length||0);
+    if(list)list.textContent=positions.length?positions.map(p=>p.symbol+" · "+p.qty+" · P/L "+money(p.unrealized_pl)).join(" | "):"No open paper positions."; 
+  }catch(error){const list=document.getElementById("positions-list");if(list)list.textContent="Positions unavailable: "+error.message;}
   try{
     const market=await get("/market/btc");
     if(market.price!=null)document.getElementById("price").textContent=money(market.price);
@@ -272,7 +284,7 @@ async function refresh(){
 
   let chartBars=[];
   try{
-    const chart=await get("/market/bars?timeframe=5Min&limit=60");
+    const chart=await get("/market/bars?timeframe="+selectedTimeframe+"&limit=100");
     chartBars=chart.bars||[];
     renderChart(chartBars);
   }catch(error){
@@ -283,6 +295,8 @@ async function refresh(){
     const signal=await get("/signal?timeframe=5Min");
     const names={LONG_SETUP:"LONG SETUP",SHORT_SETUP:"SHORT SETUP",WAIT:"WAIT",INSUFFICIENT_DATA:"INSUFFICIENT DATA"};
     document.getElementById("signal-value").textContent=names[signal.signal]||"WAITING";
+    const mini=document.getElementById("signal-mini");if(mini)mini.textContent=names[signal.signal]||"WAIT";
+    const trend=document.getElementById("trend-value");if(trend)trend.textContent=signal.ema_9>signal.ema_21?"Bullish":signal.ema_9<signal.ema_21?"Bearish":"Neutral";
     document.getElementById("signal-detail").textContent=signal.ema_9!=null?
       "EMA 9: "+money(signal.ema_9)+" · EMA 21: "+money(signal.ema_21)+" · ATR 14: "+money(signal.atr_14):
       "Waiting for at least 30 candles.";
@@ -318,6 +332,9 @@ async function refresh(){
     renderEntryQuality(null,[]);
   }
 }
+
+const timeframeControl=document.getElementById("timeframe");
+if(timeframeControl)timeframeControl.addEventListener("change",()=>{selectedTimeframe=timeframeControl.value;refresh();});
 
 if("serviceWorker"in navigator){
   addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(error=>{
