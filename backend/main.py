@@ -1022,6 +1022,10 @@ async def _auto_entry_tick():
     if not _auto_entry["enabled"] or not _paper_only_configured():
         return
     async with _auto_entry_lock:
+        # Re-check after acquiring the lock: a concurrent Disable request may
+        # have turned execution off while this tick was waiting.
+        if not _auto_entry["enabled"] or not _paper_only_configured():
+            return
         try:
             day_key = _utc_day_key()
             account = await _paper_request("GET", "/v2/account")
@@ -1205,9 +1209,12 @@ async def enable_auto_entry():
 
 @app.post("/api/paper/auto-entry/disable")
 async def disable_auto_entry():
-    _auto_entry["enabled"] = False
-    _auto_entry["last_event"] = "DISABLED_BY_USER"
-    return await auto_entry_status()
+    # Wait for any in-flight tick/order submission to finish, then prevent
+    # another tick from starting after this Disable request returns.
+    async with _auto_entry_lock:
+        _auto_entry["enabled"] = False
+        _auto_entry["last_event"] = "DISABLED_BY_USER"
+        return await auto_entry_status()
 
 
 @app.get("/api/paper/auto-entry/dry-run")
