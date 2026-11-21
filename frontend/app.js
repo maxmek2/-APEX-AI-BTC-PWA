@@ -54,7 +54,7 @@ function renderChart(rawBars){
     '<path d="'+path(e9)+'" fill="none" stroke="#f5c451" stroke-width="2"/>'+
     '<path d="'+path(e21)+'" fill="none" stroke="#65a9ff" stroke-width="2"/>'+
     '<g font-size="11" font-weight="700"><text x="12" y="15" fill="#f5c451">EMA 9</text><text x="68" y="15" fill="#65a9ff">EMA 21</text><text x="145" y="15" fill="#c4d0df">ATR 14: '+(a==null?"—":money(a))+'</text></g>';
-  setText("chart-meta",bars.length+" "+(labels[selectedTimeframe]||"5m")+" candles · ATR 14: "+(a==null?"need 15 candles":money(a)));
+  setText("chart-meta",bars.length+" "+(labels[selectedTimeframe]||"5m")+" candles · Last: "+(bars.at(-1)?.t?new Date(bars.at(-1).t).toLocaleTimeString():"—")+" · ATR 14: "+(a==null?"need 15 candles":money(a)));
   setText("chart-time-label",labels[selectedTimeframe]||"5m");setText("atr-mini",a==null?"—":money(a));
 }
 function signalFromBars(bars){
@@ -113,7 +113,7 @@ async function refresh(){
   }else setText("updated","Market error: "+market.reason.message);
   let bars=[];
   if(results[3].status==="fulfilled"){
-    bars=results[3].value.bars||[];renderChart(bars);
+    bars=(results[3].value.bars||[]).slice().sort((x,y)=>Date.parse(x.t)-Date.parse(y.t));renderChart(bars);
   }else setText("chart-meta","Chart error: "+results[3].reason.message);
   const signal=signalFromBars(bars);
   if(signal){
