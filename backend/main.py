@@ -444,13 +444,13 @@ _exit_manager = {
 _exit_task = None
 _exit_lock = asyncio.Lock()
 
-async def _paper_request(method: str, path: str, params: dict | None = None):
+async def _paper_request(method: str, path: str, params: dict | None = None, body: dict | None = None):
     if not _paper_only_configured():
         raise HTTPException(403, "Paper host verification failed")
     async with httpx.AsyncClient(timeout=12) as client:
         response = await client.request(
             method, f"{PAPER_API_ORIGIN}{path}",
-            headers=HEADERS, params=params
+            headers=HEADERS, params=params, json=body
         )
         if response.status_code >= 400:
             raise HTTPException(502, f"Alpaca paper API returned {response.status_code}")
@@ -527,6 +527,7 @@ async def _exit_manager_loop():
     while True:
         try:
             await _exit_manager_tick()
+            await _auto_entry_tick()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -690,3 +691,148 @@ async def simulate_paper_trade_lifecycle(request: PaperLifecycleSimulationReques
         "exit_manager_state_changed": False,
         "safety": "Entire lifecycle is simulated in memory. No Alpaca API call and no order submission."
     }
+
+
+# Paper-only automatic entry controller. It is OFF after every server restart.
+# Daily trade count is unlimited; risk, exposure, cooldown and daily-loss guards remain.
+_auto_entry = {
+    "enabled": False, "mode": "paper", "timeframe": "5Min",
+    "risk_fraction": 0.005, "max_notional_usd": 10.0,
+    "max_equity_fraction": 0.10, "daily_loss_limit_fraction": 0.02,
+    "cooldown_seconds": 900, "day_key": None, "day_start_equity": None,
+    "last_entry_attempt": None, "last_signal_bar": None,
+    "last_event": "DISABLED", "last_order_id": None,
+    "last_order_status": None, "trades_today": 0,
+}
+_auto_entry_lock = asyncio.Lock()
+
+def _utc_day_key() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+async def _auto_entry_tick():
+    if not _auto_entry["enabled"] or not _paper_only_configured():
+        return
+    async with _auto_entry_lock:
+        try:
+            day_key = _utc_day_key()
+            account = await _paper_request("GET", "/v2/account")
+            equity = float(account.get("equity") or 0)
+            if equity <= 0:
+                _auto_entry["last_event"] = "BLOCKED_INVALID_EQUITY"
+                return
+            if _auto_entry["day_key"] != day_key:
+                _auto_entry.update({"day_key": day_key, "day_start_equity": equity, "trades_today": 0})
+            day_start = float(_auto_entry.get("day_start_equity") or equity)
+            if equity <= day_start * (1 - _auto_entry["daily_loss_limit_fraction"]):
+                _auto_entry.update({"enabled": False, "last_event": "AUTO_DISABLED_DAILY_LOSS_LIMIT"})
+                return
+
+            positions = await _paper_request("GET", "/v2/positions")
+            btc = next((p for p in positions if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
+            if btc:
+                if not _exit_manager["armed"]:
+                    _exit_manager.update({
+                        "armed": True, "position_key": None, "entry_price": None,
+                        "stop_price": None, "target_price": None,
+                        "last_event": "AUTO_ARMED_FOR_EXISTING_BTC_POSITION", "close_order_id": None
+                    })
+                _auto_entry["last_event"] = "POSITION_OPEN_EXIT_MANAGER_ACTIVE"
+                return
+
+            open_orders = await _paper_request("GET", "/v2/orders", {"status": "open", "limit": 100})
+            if any(str(o.get("symbol", "")).replace("/", "").upper() == "BTCUSD" for o in open_orders):
+                _auto_entry["last_event"] = "WAITING_FOR_EXISTING_BTC_ORDER"
+                return
+
+            now = datetime.now(timezone.utc)
+            last_attempt = _auto_entry.get("last_entry_attempt")
+            if last_attempt and (now - datetime.fromisoformat(last_attempt)).total_seconds() < _auto_entry["cooldown_seconds"]:
+                _auto_entry["last_event"] = "COOLDOWN_ACTIVE"
+                return
+
+            signal_data = await signal("5Min")
+            bar_time = signal_data.get("last_bar_time")
+            if signal_data.get("signal") != "LONG_SETUP":
+                _auto_entry["last_event"] = "NO_CONFIRMED_LONG_SETUP"
+                return
+            if not bar_time or bar_time == _auto_entry.get("last_signal_bar"):
+                _auto_entry["last_event"] = "WAITING_FOR_NEW_5MIN_CANDLE"
+                return
+
+            quote_data = await get_json(f"{DATA}/v1beta3/crypto/us/latest/quotes", {"symbols": "BTC/USD"})
+            quote = quote_data.get("quotes", {}).get("BTC/USD", {})
+            reference_price = float(quote.get("ap") or 0)
+            if reference_price <= 0:
+                trade_data = await get_json(f"{DATA}/v1beta3/crypto/us/latest/trades", {"symbols": "BTC/USD"})
+                reference_price = float(trade_data.get("trades", {}).get("BTC/USD", {}).get("p") or 0)
+            volatility = float(signal_data.get("atr_14") or 0)
+            if reference_price <= 0 or volatility <= 0:
+                _auto_entry["last_event"] = "BLOCKED_INVALID_PRICE_OR_ATR"
+                return
+
+            stop_distance = volatility * 1.5
+            stop_price = reference_price - stop_distance
+            risk_budget = equity * _auto_entry["risk_fraction"]
+            risk_sized_notional = risk_budget * reference_price / stop_distance
+            notional = min(_auto_entry["max_notional_usd"], equity * _auto_entry["max_equity_fraction"], risk_sized_notional)
+            if stop_price <= 0 or notional < 1.0:
+                _auto_entry["last_event"] = "BLOCKED_RISK_SIZE_BELOW_MINIMUM"
+                _auto_entry["last_signal_bar"] = bar_time
+                return
+
+            quantity = round(notional / reference_price, 8)
+            if quantity <= 0:
+                _auto_entry["last_event"] = "BLOCKED_INVALID_ORDER_QUANTITY"
+                return
+
+            _auto_entry["last_entry_attempt"] = now.isoformat()
+            _auto_entry["last_signal_bar"] = bar_time
+            _auto_entry["last_event"] = "PAPER_ENTRY_SUBMITTING"
+            order = await _paper_request("POST", "/v2/orders", body={
+                "symbol": "BTC/USD", "qty": f"{quantity:.8f}",
+                "side": "buy", "type": "market", "time_in_force": "gtc"
+            })
+            _auto_entry.update({
+                "last_order_id": order.get("id"),
+                "last_order_status": order.get("status"),
+                "last_event": "PAPER_ENTRY_ORDER_SUBMITTED",
+                "trades_today": int(_auto_entry["trades_today"]) + 1
+            })
+        except Exception as exc:
+            _auto_entry["last_event"] = "ERROR: " + str(exc)[:180]
+
+@app.get("/api/paper/auto-entry")
+async def auto_entry_status():
+    return {
+        **_auto_entry,
+        "mode": "paper" if _paper_only_configured() else "blocked",
+        "daily_trade_count_limit": None,
+        "one_open_btc_position_max": True,
+        "order_submission_enabled": bool(_auto_entry["enabled"] and _paper_only_configured()),
+        "warning": "Paper-only. Auto Entry is OFF by default and resets OFF after server restart. Software-polled exits are not guaranteed exchange-native protection."
+    }
+
+@app.post("/api/paper/auto-entry/enable")
+async def enable_auto_entry():
+    if not _paper_only_configured():
+        raise HTTPException(403, "Only the exact Alpaca Paper API host is allowed")
+    account = await _paper_request("GET", "/v2/account")
+    equity = float(account.get("equity") or 0)
+    if equity <= 0:
+        raise HTTPException(409, "Paper account equity is unavailable")
+    positions = await _paper_request("GET", "/v2/positions")
+    if any(str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD" for p in positions):
+        raise HTTPException(409, "Existing BTC Paper position found; inspect it before enabling Auto Entry")
+    _auto_entry.update({
+        "enabled": True, "day_key": _utc_day_key(), "day_start_equity": equity,
+        "last_entry_attempt": None, "last_signal_bar": None,
+        "last_event": "ENABLED_WAITING_FOR_CONFIRMED_LONG_SETUP",
+        "last_order_id": None, "last_order_status": None, "trades_today": 0
+    })
+    return await auto_entry_status()
+
+@app.post("/api/paper/auto-entry/disable")
+async def disable_auto_entry():
+    _auto_entry["enabled"] = False
+    _auto_entry["last_event"] = "DISABLED_BY_USER"
+    return await auto_entry_status()
