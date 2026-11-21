@@ -982,7 +982,7 @@ async def simulate_paper_trade_lifecycle(request: PaperLifecycleSimulationReques
 _auto_entry = {
     "enabled": False, "mode": "paper", "timeframe": "5Min",
     "risk_fraction": 0.01, "max_notional_usd": 10.0,
-    "max_equity_fraction": 0.10, "daily_loss_limit_fraction": 1.0,
+    "max_equity_fraction": 0.10, "daily_loss_limit_fraction": 0.02,
     "max_trades_per_day": 5,
     "cooldown_seconds": 900, "day_key": None, "day_start_equity": None,
     "last_entry_attempt": None, "last_signal_bar": None,
@@ -1216,7 +1216,7 @@ async def auto_entry_dry_run():
     daily_loss_ok = True
     if daily_loss_known and equity > 0:
         daily_loss_ok = equity > float(daily_baseline) * (1 - _auto_entry["daily_loss_limit_fraction"])
-    add_check("daily_loss_guard", daily_loss_ok, "Within 100% daily loss limit" if daily_loss_known else "Baseline not initialized while Auto Entry is OFF; will initialize on enable")
+    add_check("daily_loss_guard", daily_loss_ok, "Within 2% daily loss limit" if daily_loss_known else "Baseline not initialized while Auto Entry is OFF; will initialize on enable")
     add_check("daily_trade_limit", int(_auto_entry.get("trades_today", 0)) < int(_auto_entry["max_trades_per_day"]),
               f'{_auto_entry.get("trades_today", 0)}/{_auto_entry["max_trades_per_day"]} trades used today')
 
