@@ -1004,8 +1004,12 @@ async def _auto_entry_tick():
             day_key = _utc_day_key()
             account = await _paper_request("GET", "/v2/account")
             equity = float(account.get("equity") or 0)
+            buying_power = float(account.get("buying_power") or 0)
             if equity <= 0:
                 _auto_entry["last_event"] = "BLOCKED_INVALID_EQUITY"
+                return
+            if buying_power <= 0:
+                _auto_entry["last_event"] = "BLOCKED_NO_BUYING_POWER"
                 return
             if _auto_entry["day_key"] != day_key:
                 _auto_entry.update({"day_key": day_key, "day_start_equity": equity, "trades_today": 0})
@@ -1077,11 +1081,13 @@ async def _auto_entry_tick():
             if quote_age < -30 or quote_age > 30:
                 _auto_entry["last_event"] = "BLOCKED_STALE_OR_MISSING_QUOTE"
                 return
-            if reference_price <= 0:
-                trade_data = await get_json(f"{DATA}/v1beta3/crypto/us/latest/trades", {"symbols": "BTC/USD"})
-                reference_price = float(trade_data.get("trades", {}).get("BTC/USD", {}).get("p") or 0)
             volatility = float(signal_data.get("atr_14") or 0)
-            if reference_price <= 0 or volatility <= 0:
+            # Use only a fresh executable ask. A last-trade fallback can be stale
+            # or materially different from the price available to a market buy.
+            if reference_price <= 0:
+                _auto_entry["last_event"] = "BLOCKED_INVALID_OR_MISSING_ASK"
+                return
+            if volatility <= 0:
                 _auto_entry["last_event"] = "BLOCKED_INVALID_PRICE_OR_ATR"
                 return
 
@@ -1089,7 +1095,7 @@ async def _auto_entry_tick():
             stop_price = reference_price - stop_distance
             risk_budget = equity * _auto_entry["risk_fraction"]
             risk_sized_notional = risk_budget * reference_price / stop_distance
-            notional = min(_auto_entry["max_notional_usd"], equity * _auto_entry["max_equity_fraction"], risk_sized_notional)
+            notional = min(_auto_entry["max_notional_usd"], equity * _auto_entry["max_equity_fraction"], risk_sized_notional, buying_power)
             if stop_price <= 0 or notional < 1.0:
                 _auto_entry["last_event"] = "BLOCKED_RISK_SIZE_BELOW_MINIMUM"
                 _auto_entry["last_signal_bar"] = bar_time
