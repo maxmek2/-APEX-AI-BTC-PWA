@@ -51,3 +51,31 @@ def test_entry_candle_is_checked_for_stop_or_target():
     assert first["entry_time"] == "2026-11-01T00:22:00Z"
     assert first["exit_time"] == first["entry_time"]
     assert first["exit_reason"] == "STOP_LOSS"
+
+
+
+def test_slippage_is_charged_adversely_on_entry_and_exit():
+    bars = []
+    for i in range(22):
+        price = 100.0 + i * 0.5
+        bars.append({
+            "t": f"2026-11-01T00:{i:02d}:00Z",
+            "o": price, "h": price + 0.6, "l": price - 0.6,
+            "c": price + 0.4, "v": 1,
+        })
+    bars.append({
+        "t": "2026-11-01T00:22:00Z",
+        "o": 111.0, "h": 112.0, "l": 100.0, "c": 111.5, "v": 1,
+    })
+    for i in range(23, 60):
+        bars.append({
+            "t": f"2026-11-01T01:{i:02d}:00Z",
+            "o": 111.0, "h": 111.2, "l": 110.8, "c": 111.0, "v": 1,
+        })
+
+    baseline = run_ema_atr_backtest(bars, fee_rate=0.0, slippage_bps=0)
+    slipped = run_ema_atr_backtest(bars, fee_rate=0.0, slippage_bps=10)
+    assert baseline["trades"]
+    assert slipped["metrics"]["estimated_slippage_usd"] > 0
+    assert slipped["metrics"]["net_pnl_usd"] < baseline["metrics"]["net_pnl_usd"]
+    assert "exit_breakdown" in slipped["metrics"]
