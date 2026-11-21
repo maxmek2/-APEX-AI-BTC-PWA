@@ -35,3 +35,30 @@ def test_public_health_remains_readable_without_paper_token(monkeypatch):
     with TestClient(app) as client:
         response = client.get("/health")
     assert response.status_code == 200
+
+
+def test_private_account_and_positions_reads_require_bearer_token(monkeypatch):
+    monkeypatch.setenv("APEX_API_TOKEN", "test-secret")
+    with TestClient(app) as client:
+        account = client.get("/api/account")
+        positions = client.get("/api/positions")
+    assert account.status_code == 401
+    assert positions.status_code == 401
+
+
+def test_private_account_read_accepts_token_and_returns_paper_data(monkeypatch):
+    monkeypatch.setenv("APEX_API_TOKEN", "test-secret")
+
+    async def fake_get_json(url, params=None):
+        assert url.endswith("/v2/account")
+        return {"status": "ACTIVE", "currency": "USD", "cash": "100", "equity": "100"}
+
+    from backend import main
+    monkeypatch.setattr(main, "get_json", fake_get_json)
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/account", headers={"Authorization": "Bearer test-secret"}
+        )
+    assert response.status_code == 200
+    assert response.json()["mode"] == "paper"
+    assert response.json()["equity"] == "100"
