@@ -5,7 +5,8 @@ const $=id=>document.getElementById(id);
 const money=v=>Number.isFinite(Number(v))?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(v)):"—";
 const num=v=>Number.isFinite(Number(v))?Number(v):null;
 function text(id,value){const e=$(id);if(e)e.textContent=value;}
-async function get(path){const r=await fetch(API+path,{headers:{Accept:"application/json"},cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status+" "+path);return r.json();}
+function paperHeaders(path,extra={}){const headers={Accept:"application/json",...extra};if(path.includes("/paper/")){const token=sessionStorage.getItem("apexPaperToken")||"";if(token)headers.Authorization="Bearer "+token;}return headers;}
+async function get(path){const r=await fetch(API+path,{headers:paperHeaders(path),cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status+" "+path);return r.json();}
 function setStatus(message,ok=false){text("connection",message);const e=$("connection");if(e)e.style.color=ok?"var(--green)":"#ffb17e";text("cloud-title",ok?"Robot Monitor Online":"Market Monitor");}
 function ema(values,p){if(values.length<p)return values.map(()=>null);const out=Array(values.length).fill(null);let v=values.slice(0,p).reduce((a,b)=>a+b,0)/p;out[p-1]=v;const alpha=2/(p+1);for(let i=p;i<values.length;i++){v=alpha*values[i]+(1-alpha)*v;out[i]=v;}return out;}
 function atr(bars,p=14){if(bars.length<=p)return null;const trs=[];for(let i=1;i<bars.length;i++){const b=bars[i],prev=bars[i-1].c;trs.push(Math.max(b.h-b.l,Math.abs(b.h-prev),Math.abs(b.l-prev)));}let v=trs.slice(0,p).reduce((a,b)=>a+b,0)/p;for(let i=p;i<trs.length;i++)v=(v*(p-1)+trs[i])/p;return v;}
@@ -53,6 +54,8 @@ async function refresh(){
 }
 async function runBacktest(){const out=$("backtest-result");out.textContent="Running read-only historical simulation…";try{const r=await get("/backtest?timeframe=5Min&limit=2000&starting_equity=100&notional_usd=10"),m=r.metrics;if(!m){out.textContent="Backtest status: "+r.status+" · Bars: "+r.bars_used;return;}out.innerHTML='<div class="backtest-grid"><div><small>Ending equity</small><b>'+money(m.ending_equity_usd)+'</b></div><div><small>Net P&amp;L</small><b class="'+(m.net_pnl_usd>=0?"check-pass":"check-fail")+'">'+money(m.net_pnl_usd)+'</b></div><div><small>Trades</small><b>'+m.trades+'</b></div><div><small>Win rate</small><b>'+m.win_rate_percent+'%</b></div><div><small>Profit factor</small><b>'+(m.profit_factor??"—")+'</b></div><div><small>Max drawdown</small><b>'+m.max_drawdown_percent+'%</b></div></div><small class="muted">Historical simulation · '+r.bars_used+' candles · '+r.period.from+' to '+r.period.to+'</small>'; }catch(e){out.textContent="Backtest unavailable: "+e.message;}}
 function setupControls(){
+ const tokenInput=$("paper-api-token");
+ if(tokenInput){tokenInput.value=sessionStorage.getItem("apexPaperToken")||"";tokenInput.addEventListener("change",()=>{sessionStorage.setItem("apexPaperToken",tokenInput.value.trim());loadPaperEngineStatus();});}
  const tf=$("timeframe");tf.addEventListener("change",()=>{selectedTimeframe=tf.value;text("signal-timeframe",labels[selectedTimeframe].toUpperCase());refresh().catch(e=>setStatus(e.message));});
  $("run-backtest").addEventListener("click",runBacktest);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
@@ -78,7 +81,7 @@ async function previewPaperTrade(){
  if(!out||!btn)return;
  btn.disabled=true;out.textContent="Checking paper account, open positions, signal and risk limits…";
  try{
-  const response=await fetch(API+"/paper/preview",{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify({timeframe:selectedTimeframe,risk_percent:0.5,max_notional_usd:10,stop_atr_multiple:1.5,reward_risk:2})});
+  const response=await fetch(API+"/paper/preview",{method:"POST",headers:paperHeaders("/paper/preview",{"Content-Type":"application/json"}),body:JSON.stringify({timeframe:selectedTimeframe,risk_percent:0.5,max_notional_usd:10,stop_atr_multiple:1.5,reward_risk:2})});
   const data=await response.json();
   if(!response.ok)throw new Error(data.detail||"HTTP "+response.status);
   if(!data.approved){out.textContent="NO TRADE · "+data.signal+" · "+data.reason;return;}
