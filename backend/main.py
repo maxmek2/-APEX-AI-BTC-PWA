@@ -370,7 +370,7 @@ async def paper_execution_status():
         "auto_enabled": bool(_auto_entry.get("enabled", False)) if "_auto_entry" in globals() else False,
         "order_submission_enabled": bool(_auto_entry.get("enabled", False)) if "_auto_entry" in globals() else False,
         "protective_exit_support": False,
-        "reason": "BTC crypto bracket/OCO exits are not supported by the current Alpaca crypto order-class matrix; execution stays disabled until a verified protective-exit manager exists.",
+        "reason": "BTC crypto bracket/OCO exits are not used here. Guarded Paper auto-entry is available only after explicit enable; exits rely on an experimental server-polled manager and are not guaranteed exchange-native protection.",
         "symbol": "BTC/USD"
     }
 
