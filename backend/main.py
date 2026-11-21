@@ -237,20 +237,50 @@ def atr_series(bars:list[dict],period:int=14)->list[float|None]:
         out[index]=value
     return out
 
+async def fetch_backtest_bars(timeframe: str, limit: int) -> tuple[list[dict], bool, int]:
+    """Fetch up to limit BTC bars using Alpaca pagination; return oldest-to-newest bars."""
+    endpoint = f"{DATA}/v1beta3/crypto/us/bars"
+    newest_first: list[dict] = []
+    page_token = None
+    pages = 0
+    has_more_data = False
+
+    while len(newest_first) < limit:
+        params = {
+            "symbols": "BTC/USD",
+            "timeframe": timeframe,
+            "limit": min(10000, limit - len(newest_first)),
+            "sort": "desc",
+        }
+        if page_token:
+            params["page_token"] = page_token
+        data = await get_json(endpoint, params)
+        pages += 1
+        page = data.get("bars", {}).get("BTC/USD", [])
+        newest_first.extend(page)
+        next_token = data.get("next_page_token")
+        if not next_token or not page:
+            has_more_data = False
+            break
+        if len(newest_first) >= limit:
+            has_more_data = True
+            break
+        page_token = next_token
+
+    unique = {bar.get("t"): bar for bar in newest_first if bar.get("t")}
+    selected = sorted(unique.values(), key=lambda bar: bar["t"], reverse=True)[:limit]
+    return list(reversed(selected)), has_more_data, pages
+
+
 @app.get("/api/backtest")
 async def backtest(
     timeframe:str=Query("5Min",pattern="^(5Min|15Min|1Hour)$"),
-    limit:int=Query(2000,ge=100,le=5000),
+    limit:int=Query(2000,ge=100,le=10000),
     starting_equity:float=Query(100,gt=0,le=1000000),
     notional_usd:float=Query(10,gt=0,le=100000),
 ):
     """Read-only long-only EMA/ATR backtest. It never submits orders."""
-    data=await get_json(
-        f"{DATA}/v1beta3/crypto/us/bars",
-        {"symbols":"BTC/USD","timeframe":timeframe,"limit":limit,"sort":"desc"}
-    )
-    bars=data.get("bars",{}).get("BTC/USD",[])
-    bars=list(reversed(bars))  # Keep candles chronological after fetching newest first.
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
     if len(bars)<50:
         return {
             "symbol":"BTC/USD","timeframe":timeframe,"bars_used":len(bars),
@@ -329,7 +359,7 @@ async def backtest(
     return {
         "symbol":"BTC/USD","timeframe":timeframe,"bars_used":len(bars),
         "period":{"from":bars[0].get("t"),"to":bars[-1].get("t")},
-        "has_more_data":bool(data.get("next_page_token")),
+        "has_more_data":has_more_data,\n        "data_pages_fetched":data_pages,\n        "requested_bars":limit,\n        "history_complete_for_request":len(bars) == limit,
         "strategy":{
             "direction":"LONG_ONLY","entry":"EMA9 > EMA21 and close > EMA9; fill next candle open",
             "stop_loss":"1.5 x ATR14","take_profit":"2.0 x ATR14",
