@@ -1,6 +1,6 @@
 # APEX AI BTC PWA
 
-Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca paper-account backend.
+Mobile-first BTC/USD scalping dashboard with secure Alpaca Paper monitoring and explicitly gated Paper execution.
 
 ## Current build: 1.0
 - iPhone-friendly installable PWA shell.
@@ -11,7 +11,7 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - Read-only historical backtest endpoint for a long-only EMA/ATR strategy; fetches paginated history up to 10,000 bars and reports page/history coverage diagnostics.
 - Paper execution safety status and risk-bounded BTC trade preview endpoints (preview only; no entry order is submitted).
 - Server-side BTC protective exit manager with explicit arm/disarm endpoints; starts DISARMED, manages only an existing BTC paper position, and never opens a position.
-- Automated execution and order submission remain OFF.
+- Paper Auto Entry is OFF by default and requires explicit authenticated enable; live trading is not implemented.
 
 ## Safety
 - Use Alpaca PAPER credentials only.
@@ -45,7 +45,7 @@ Mobile-first BTC/USD scalping research dashboard with a secure, read-only Alpaca
 - POST /api/paper/exit-manager/arm (requires an existing BTC paper position)
 - POST /api/paper/exit-manager/disarm
 
-Entry execution remains disabled. The exit manager can submit a market close for an existing BTC paper position only after explicit arming and only when a stop/target is crossed.
+Paper Auto Entry remains OFF by default and requires explicit authenticated activation. The Exit Manager can submit a market close for an existing BTC Paper position only after explicit arming or Auto Entry position detection and only when a stop/target is crossed.
 
 
 ## Backtest assumptions
@@ -135,6 +135,18 @@ Entry execution remains disabled. The exit manager can submit a market close for
 4. Keep the frontend session token in PWA Settings; never place Alpaca credentials in frontend code.
 5. After deployment, verify `/health`, authenticated Paper status, Auto Entry OFF, and Exit Manager DISARMED. Do not enable either control as part of smoke testing.
 
+
+
+## Paper Auto Entry dashboard controls
+
+- The dashboard includes a read-only **Run safety preflight** action plus explicit **Enable Paper Auto Entry** and **Disable** controls.
+- Enable requires an authenticated dashboard token and checks the exact Alpaca Paper host, active/unblocked account, positive equity/buying power, no open BTC position/order, and a disarmed Exit Manager.
+- The entry signal is calculated only from completed 5-minute candles. A fresh quote, valid ATR, cooldown, daily loss guard, position/order checks and notional/risk limits are checked again by the server loop before each entry.
+- Disabling and re-enabling during the same UTC day does not reset the daily equity baseline, submitted-entry count, cooldown, or last processed candle. Re-enable is blocked after the 2% daily loss threshold or five submitted entries.
+- The **Enable** button starts a Paper-only server controller; it can submit Alpaca Paper market orders when a later setup qualifies. It does not place an order immediately just by being enabled.
+- Auto Entry remains OFF after server restart. A restart also forces the Exit Manager DISARMED and requires manual broker position/order reconciliation.
+- The software-polled exit manager is not exchange-native protection. A position can remain unprotected during startup, network outages, Render restarts or delayed market data. Do not treat this controller as production-safe or live-trading-ready.
+- The preflight endpoint is read-only and never submits orders. GitHub CI uses mocks and does not prove actual Alpaca fills or Render runtime behavior.
 
 ## Stage 5 — Paper operations validation
 

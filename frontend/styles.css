@@ -369,3 +369,13 @@
   .summary-cells small { font-size:6px; }
   .summary-cells b { font-size:9px; }
 }
+
+
+/* Paper Auto Entry controls */
+.auto-entry-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.auto-entry-buttons button{min-height:40px}
+#auto-entry-enable{border-color:#8d6535;background:#382918;color:#ffd7a5}
+#auto-entry-disable{border-color:#7c3945;background:#351c25;color:#ffd4db}
+.auto-entry-buttons button:disabled{opacity:.45;cursor:not-allowed}
+#auto-entry-status{white-space:pre-line;overflow-wrap:anywhere}
+@media(max-width:600px){.auto-entry-buttons{display:grid;grid-template-columns:1fr 1fr}.auto-entry-buttons #auto-entry-dry-run{grid-column:1/-1}.auto-entry-buttons button{font-size:11px;padding:10px 7px}}

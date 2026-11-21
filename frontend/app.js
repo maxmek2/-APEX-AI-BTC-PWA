@@ -115,3 +115,58 @@ async function previewPaperTrade(){
 const paperPreviewButton=$("paper-preview");
 if(paperPreviewButton)paperPreviewButton.addEventListener("click",previewPaperTrade);
 loadPaperEngineStatus();
+
+
+async function loadAutoEntryStatus(){
+ const state=$("auto-entry-state"),out=$("auto-entry-status");
+ if(!state)return;
+ try{
+  const data=await get("/paper/auto-entry");
+  const enabled=Boolean(data.enabled&&data.order_submission_enabled);
+  state.textContent=enabled?"ENABLED · PAPER":"OFF";
+  state.className="tag "+(enabled?"check-fail":"neutral");
+  text("robot-auto-state",enabled?"ON · PAPER AUTO ENTRY":"OFF · MONITOR ONLY");
+  text("robot-execution-state",enabled?"Paper Auto Entry ON":"Paper Auto Entry OFF");
+  if(out)out.textContent="Mode: "+data.mode+" · Auto Entry: "+(enabled?"ON":"OFF")+" · Today: "+data.trades_today+"/"+data.daily_trade_count_limit+" entries · Last event: "+(data.last_event||"—");
+  const enable=$("auto-entry-enable"),disable=$("auto-entry-disable");
+  if(enable)enable.disabled=enabled;
+  if(disable)disable.disabled=!enabled;
+ }catch(e){
+  state.textContent="STATUS UNAVAILABLE";
+  if(out)out.textContent="Auto Entry status unavailable: "+e.message+" · Check the dashboard token and backend.";
+ }
+}
+async function runAutoEntryDryRun(){
+ const out=$("auto-entry-status"),btn=$("auto-entry-dry-run");
+ if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Checking Paper account, open BTC positions/orders, completed candle, quote freshness and risk limits…";
+ try{
+  const data=await get("/paper/auto-entry/dry-run");
+  const lines=(data.checks||[]).map(c=>(c.passed?"PASS":"BLOCKED")+" · "+c.check.replaceAll("_"," ")+": "+c.detail);
+  out.textContent=data.result+" · Proposed notional "+money(data.proposed_notional_usd)+" · Quantity "+data.proposed_quantity_btc+" BTC\n"+lines.join("\n")+"\nNo order submitted; no execution state changed.";
+ }catch(e){out.textContent="Preflight unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+async function setAutoEntry(enabled){
+ const out=$("auto-entry-status"),btn=$(enabled?"auto-entry-enable":"auto-entry-disable");
+ if(!out||!btn)return;
+ if(enabled&&!window.confirm("Enable APEX Paper Auto Entry? This starts a server-side controller that may submit Alpaca PAPER market orders when a valid BTC setup appears. No live-money orders are supported."))return;
+ btn.disabled=true;out.textContent=enabled?"Enabling Paper Auto Entry…":"Disabling Paper Auto Entry…";
+ try{
+  const path=enabled?"/paper/auto-entry/enable":"/paper/auto-entry/disable";
+  const response=await fetch(API+path,{method:"POST",headers:paperHeaders(path,{"Content-Type":"application/json"})});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.detail||"HTTP "+response.status);
+  out.textContent="Mode: "+data.mode+" · Auto Entry: "+(data.enabled?"ON":"OFF")+" · Last event: "+(data.last_event||"—")+" · Daily cap: "+data.trades_today+"/"+data.daily_trade_count_limit;
+  await loadAutoEntryStatus();
+ }catch(e){out.textContent=(enabled?"Enable":"Disable")+" failed: "+e.message;}
+ finally{btn.disabled=false;}
+}
+const autoDryRunButton=$("auto-entry-dry-run");
+if(autoDryRunButton)autoDryRunButton.addEventListener("click",runAutoEntryDryRun);
+const autoEnableButton=$("auto-entry-enable");
+if(autoEnableButton)autoEnableButton.addEventListener("click",()=>setAutoEntry(true));
+const autoDisableButton=$("auto-entry-disable");
+if(autoDisableButton)autoDisableButton.addEventListener("click",()=>setAutoEntry(false));
+loadAutoEntryStatus();
+setInterval(loadAutoEntryStatus,15000);

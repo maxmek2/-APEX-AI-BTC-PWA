@@ -1,4 +1,5 @@
 import os
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import httpx
@@ -180,6 +181,23 @@ def atr(bars:list[dict],period:int=14)->float|None:
         value=(value*(period-1)+tr)/period
     return value
 
+def _completed_bars(bars: list[dict], timeframe: str, now: datetime | None = None) -> list[dict]:
+    """Keep only candles whose full interval has elapsed; avoid intrabar signals."""
+    seconds = {"1Min": 60, "5Min": 300, "15Min": 900, "1Hour": 3600}[timeframe]
+    current = now or datetime.now(timezone.utc)
+    completed = []
+    for bar in bars:
+        try:
+            stamp = datetime.fromisoformat(str(bar.get("t")).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            if stamp + timedelta(seconds=seconds) <= current:
+                completed.append(bar)
+        except (TypeError, ValueError):
+            continue
+    return completed
+
+
 @app.get("/api/signal")
 async def signal(timeframe:str=Query("5Min",pattern="^(1Min|5Min|15Min|1Hour)$")):
     data=await get_json(
@@ -188,6 +206,7 @@ async def signal(timeframe:str=Query("5Min",pattern="^(1Min|5Min|15Min|1Hour)$")
     )
     bars=data.get("bars",{}).get("BTC/USD",[])
     bars=list(reversed(bars))  # Keep candles chronological after fetching newest first.
+    bars=_completed_bars(bars, timeframe)
     if len(bars)<30:
         return {"signal":"INSUFFICIENT_DATA","timeframe":timeframe,
                 "bars_received":len(bars),"automated_execution":False}
@@ -1003,15 +1022,23 @@ async def _auto_entry_tick():
     if not _auto_entry["enabled"] or not _paper_only_configured():
         return
     async with _auto_entry_lock:
+        # Re-check after acquiring the lock: a concurrent Disable request may
+        # have turned execution off while this tick was waiting.
+        if not _auto_entry["enabled"] or not _paper_only_configured():
+            return
         try:
             day_key = _utc_day_key()
             account = await _paper_request("GET", "/v2/account")
             equity = float(account.get("equity") or 0)
             buying_power = float(account.get("buying_power") or 0)
-            if equity <= 0:
+            if str(account.get("status", "")).lower() != "active" or bool(account.get("trading_blocked")):
+                _auto_entry["last_event"] = "BLOCKED_ACCOUNT_NOT_ACTIVE_OR_TRADING_BLOCKED"
+                _auto_entry["enabled"] = False
+                return
+            if not math.isfinite(equity) or equity <= 0:
                 _auto_entry["last_event"] = "BLOCKED_INVALID_EQUITY"
                 return
-            if buying_power <= 0:
+            if not math.isfinite(buying_power) or buying_power <= 0:
                 _auto_entry["last_event"] = "BLOCKED_NO_BUYING_POWER"
                 return
             if _auto_entry["day_key"] != day_key:
@@ -1087,10 +1114,10 @@ async def _auto_entry_tick():
             volatility = float(signal_data.get("atr_14") or 0)
             # Use only a fresh executable ask. A last-trade fallback can be stale
             # or materially different from the price available to a market buy.
-            if reference_price <= 0:
+            if not math.isfinite(reference_price) or reference_price <= 0:
                 _auto_entry["last_event"] = "BLOCKED_INVALID_OR_MISSING_ASK"
                 return
-            if volatility <= 0:
+            if not math.isfinite(volatility) or volatility <= 0:
                 _auto_entry["last_event"] = "BLOCKED_INVALID_PRICE_OR_ATR"
                 return
 
@@ -1140,26 +1167,54 @@ async def auto_entry_status():
 async def enable_auto_entry():
     if not _paper_only_configured():
         raise HTTPException(403, "Only the exact Alpaca Paper API host is allowed")
-    account = await _paper_request("GET", "/v2/account")
-    equity = float(account.get("equity") or 0)
-    if equity <= 0:
-        raise HTTPException(409, "Paper account equity is unavailable")
-    positions = await _paper_request("GET", "/v2/positions")
-    if any(str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD" for p in positions):
-        raise HTTPException(409, "Existing BTC Paper position found; inspect it before enabling Auto Entry")
-    _auto_entry.update({
-        "enabled": True, "day_key": _utc_day_key(), "day_start_equity": equity,
-        "last_entry_attempt": None, "last_signal_bar": None,
-        "last_event": "ENABLED_WAITING_FOR_CONFIRMED_LONG_SETUP",
-        "last_order_id": None, "last_order_status": None, "trades_today": 0
-    })
-    return await auto_entry_status()
+    async with _auto_entry_lock:
+        if _exit_manager.get("armed"):
+            raise HTTPException(409, "Disarm the Paper Exit Manager before enabling Auto Entry")
+        account = await _paper_request("GET", "/v2/account")
+        try:
+            equity = float(account.get("equity") or 0)
+            buying_power = float(account.get("buying_power") or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(409, "Paper account equity or buying power is invalid")
+        if str(account.get("status", "")).lower() != "active" or bool(account.get("trading_blocked")):
+            raise HTTPException(409, "Paper account is not active or trading is blocked")
+        if not math.isfinite(equity) or equity <= 0:
+            raise HTTPException(409, "Paper account equity is unavailable")
+        if not math.isfinite(buying_power) or buying_power <= 0:
+            raise HTTPException(409, "Paper buying power is unavailable")
+        positions = await _paper_request("GET", "/v2/positions")
+        if any(str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD" for p in positions):
+            raise HTTPException(409, "Existing BTC Paper position found; inspect it before enabling Auto Entry")
+        open_orders = await _paper_request("GET", "/v2/orders", {"status": "open", "limit": 100})
+        if any(str(o.get("symbol", "")).replace("/", "").upper() == "BTCUSD" for o in open_orders):
+            raise HTTPException(409, "Existing BTC Paper order found; reconcile it before enabling Auto Entry")
+        today = _utc_day_key()
+        if _auto_entry.get("day_key") != today:
+            _auto_entry.update({"day_key": today, "day_start_equity": equity, "trades_today": 0})
+        elif _auto_entry.get("day_start_equity") is None:
+            _auto_entry["day_start_equity"] = equity
+        else:
+            baseline = float(_auto_entry["day_start_equity"])
+            if equity <= baseline * (1 - _auto_entry["daily_loss_limit_fraction"]):
+                raise HTTPException(409, "Daily loss limit reached; Auto Entry cannot be enabled again today")
+            if int(_auto_entry.get("trades_today", 0)) >= int(_auto_entry["max_trades_per_day"]):
+                raise HTTPException(409, "Daily submitted-entry limit reached; Auto Entry cannot be enabled again today")
+        # Re-enabling must not reset today's loss baseline, entry count,
+        # cooldown, or last processed candle; otherwise the guards are bypassable.
+        _auto_entry.update({
+            "enabled": True,
+            "last_event": "ENABLED_WAITING_FOR_CONFIRMED_LONG_SETUP",
+        })
+        return await auto_entry_status()
 
 @app.post("/api/paper/auto-entry/disable")
 async def disable_auto_entry():
-    _auto_entry["enabled"] = False
-    _auto_entry["last_event"] = "DISABLED_BY_USER"
-    return await auto_entry_status()
+    # Wait for any in-flight tick/order submission to finish, then prevent
+    # another tick from starting after this Disable request returns.
+    async with _auto_entry_lock:
+        _auto_entry["enabled"] = False
+        _auto_entry["last_event"] = "DISABLED_BY_USER"
+        return await auto_entry_status()
 
 
 @app.get("/api/paper/auto-entry/dry-run")
@@ -1192,15 +1247,19 @@ async def auto_entry_dry_run():
     def add_check(name: str, passed: bool, detail: str):
         checks.append({"check": name, "passed": bool(passed), "detail": detail})
 
+    account_active = str(account.get("status", "")).lower() == "active"
+    trading_allowed = not bool(account.get("trading_blocked"))
     add_check("paper_host", _paper_only_configured(), "Exact Alpaca Paper API host allow-list")
-    add_check("account_equity", equity > 0, f"Equity USD {equity:.2f}")
-    add_check("buying_power", buying_power > 0, f"Buying power USD {buying_power:.2f}")
+    add_check("account_active", account_active and trading_allowed, "Account active and trading not blocked")
+    add_check("account_equity", math.isfinite(equity) and equity > 0, f"Equity USD {equity:.2f}")
+    add_check("buying_power", math.isfinite(buying_power) and buying_power > 0, f"Buying power USD {buying_power:.2f}")
     add_check("no_existing_btc_position", btc_position is None, "No open BTC position" if btc_position is None else "BTC position already open")
     add_check("no_existing_btc_order", btc_order is None, "No open BTC order" if btc_order is None else "Open BTC order already exists")
+    add_check("exit_manager_disarmed", not bool(_exit_manager.get("armed")), "Exit Manager is DISARMED" if not _exit_manager.get("armed") else "Disarm Exit Manager before enabling Auto Entry")
     add_check("long_signal", signal_data.get("signal") == "LONG_SETUP", f"Signal: {signal_data.get('signal', 'UNKNOWN')}")
-    add_check("valid_ask", ask > 0, f"Latest ask USD {ask:.2f}")
+    add_check("valid_ask", math.isfinite(ask) and ask > 0, f"Latest ask USD {ask:.2f}")
     add_check("fresh_quote", quote_fresh, f"Quote age {quote_age:.1f}s" if quote_age is not None else "Missing or invalid quote timestamp")
-    add_check("valid_atr", volatility > 0, f"ATR(14) USD {volatility:.2f}")
+    add_check("valid_atr", math.isfinite(volatility) and volatility > 0, f"ATR(14) USD {volatility:.2f}")
 
     bar_time = signal_data.get("last_bar_time")
     same_bar = bool(bar_time and bar_time == _auto_entry.get("last_signal_bar"))
