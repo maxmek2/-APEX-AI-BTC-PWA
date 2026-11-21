@@ -1,4 +1,4 @@
-const API=window.APEX_API_BASE||"/api";
+const API=window.APEX_API_BASE||"https://apex-ai-btc-pwa.onrender.com/api";
 const money=value=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(value||0));
 async function get(path){const response=await fetch(API+path);if(!response.ok)throw Error("API "+response.status);return response.json()}
 function renderChart(bars){
