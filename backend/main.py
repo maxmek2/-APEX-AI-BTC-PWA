@@ -629,3 +629,64 @@ async def simulate_paper_exit(request: ExitSimulationRequest):
         **result,
         "safety": "No broker API call; no order submitted; manager remains unchanged."
     }
+
+
+class PaperLifecycleSimulationRequest(BaseModel):
+    entry_price: float = Field(gt=0)
+    atr_14: float = Field(gt=0)
+    simulated_prices: list[float] = Field(min_length=1, max_length=20)
+    notional_usd: float = Field(default=10.0, gt=0, le=10.0)
+
+@app.post("/api/paper/lifecycle/simulate")
+async def simulate_paper_trade_lifecycle(request: PaperLifecycleSimulationRequest):
+    """Simulate entry-to-exit lifecycle in memory only; never contacts Alpaca."""
+    entry = float(request.entry_price)
+    stop = round(entry - 1.5 * float(request.atr_14), 2)
+    target = round(entry + (1.5 * float(request.atr_14) * 2.0), 2)
+    if stop <= 0:
+        raise HTTPException(422, "ATR is too large for a valid positive stop price")
+    prices = [float(p) for p in request.simulated_prices]
+    if any(p <= 0 for p in prices):
+        raise HTTPException(422, "All simulated prices must be greater than zero")
+
+    trace = [
+        {"step": 1, "event": "SIMULATED_ENTRY_CREATED", "price": entry},
+        {"step": 2, "event": "SIMULATED_POSITION_DETECTED", "price": entry,
+         "quantity_btc": round(float(request.notional_usd) / entry, 8)},
+        {"step": 3, "event": "PROTECTIVE_LEVELS_SET", "stop_price": stop,
+         "take_profit_price": target},
+    ]
+    final_event = "POSITION_OPEN_HOLDING"
+    closed = False
+    for index, price in enumerate(prices, start=4):
+        if closed:
+            break
+        if price <= stop:
+            final_event = "SIMULATED_STOP_LOSS_EXIT"
+            trace.append({"step": index, "event": final_event, "price": price})
+            closed = True
+        elif price >= target:
+            final_event = "SIMULATED_TAKE_PROFIT_EXIT"
+            trace.append({"step": index, "event": final_event, "price": price})
+            closed = True
+        else:
+            trace.append({"step": index, "event": "HOLD_POSITION", "price": price})
+
+    if closed:
+        trace.append({"step": len(trace) + 1, "event": "SIMULATED_POSITION_CLOSED"})
+    return {
+        "mode": "SIMULATION_ONLY",
+        "symbol": "BTC/USD",
+        "entry_price": entry,
+        "notional_usd": float(request.notional_usd),
+        "stop_price": stop,
+        "take_profit_price": target,
+        "final_event": final_event,
+        "position_closed_in_simulation": closed,
+        "trace": trace,
+        "order_submitted": False,
+        "alpaca_api_called": False,
+        "live_or_paper_positions_changed": False,
+        "exit_manager_state_changed": False,
+        "safety": "Entire lifecycle is simulated in memory. No Alpaca API call and no order submission."
+    }
