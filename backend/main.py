@@ -1184,13 +1184,18 @@ async def enable_auto_entry():
         open_orders = await _paper_request("GET", "/v2/orders", {"status": "open", "limit": 100})
         if any(str(o.get("symbol", "")).replace("/", "").upper() == "BTCUSD" for o in open_orders):
             raise HTTPException(409, "Existing BTC Paper order found; reconcile it before enabling Auto Entry")
+        today = _utc_day_key()
+        if _auto_entry.get("day_key") != today:
+            _auto_entry.update({"day_key": today, "day_start_equity": equity, "trades_today": 0})
+        elif _auto_entry.get("day_start_equity") is None:
+            _auto_entry["day_start_equity"] = equity
+        # Re-enabling must not reset today's loss baseline, entry count,
+        # cooldown, or last processed candle; otherwise the guards are bypassable.
         _auto_entry.update({
-        "enabled": True, "day_key": _utc_day_key(), "day_start_equity": equity,
-        "last_entry_attempt": None, "last_signal_bar": None,
-        "last_event": "ENABLED_WAITING_FOR_CONFIRMED_LONG_SETUP",
-        "last_order_id": None, "last_order_status": None, "trades_today": 0
-    })
-    return await auto_entry_status()
+            "enabled": True,
+            "last_event": "ENABLED_WAITING_FOR_CONFIRMED_LONG_SETUP",
+        })
+        return await auto_entry_status()
 
 @app.post("/api/paper/auto-entry/disable")
 async def disable_auto_entry():
