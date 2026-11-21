@@ -237,6 +237,103 @@ def atr_series(bars:list[dict],period:int=14)->list[float|None]:
         out[index]=value
     return out
 
+
+def _backtest_exit_for_candle(position: dict, candle: dict) -> tuple[float, str] | None:
+    """Resolve one OHLC candle after entry; conservative when path is unknowable."""
+    open_price, high, low = float(candle["o"]), float(candle["h"]), float(candle["l"])
+    stop, target = float(position["stop"]), float(position["target"])
+    hit_stop, hit_target = low <= stop, high >= target
+    if open_price <= stop:
+        return open_price, "STOP_LOSS_GAP"
+    if hit_stop:  # Includes ambiguous candles where both levels were touched.
+        return stop, "STOP_LOSS"
+    if open_price >= target:
+        return open_price, "TAKE_PROFIT_GAP"
+    if hit_target:
+        return target, "TAKE_PROFIT"
+    return None
+
+
+def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
+                         notional_usd: float = 10.0, fee_rate: float = 0.0025) -> dict:
+    """Deterministic long-only close-signal/next-open-fill OHLC backtest."""
+    if len(bars) < 50:
+        raise ValueError("At least 50 candles are required")
+    if starting_equity <= 0 or notional_usd <= 0 or fee_rate < 0:
+        raise ValueError("Equity/notional must be positive and fee rate non-negative")
+    closes = [float(item["c"]) for item in bars]
+    fast, slow, volatility = ema_series(closes, 9), ema_series(closes, 21), atr_series(bars, 14)
+    position, trades = None, []
+
+    def close_position(candle: dict, exit_price: float, reason: str) -> None:
+        nonlocal position
+        entry, quantity = float(position["entry"]), float(position["quantity"])
+        gross = (exit_price - entry) * quantity
+        fees = (entry * quantity + exit_price * quantity) * fee_rate
+        trades.append({
+            "entry_time": position["entry_time"], "exit_time": candle.get("t"),
+            "entry_price": round(entry, 2), "exit_price": round(exit_price, 2),
+            "exit_reason": reason, "gross_pnl_usd": round(gross, 4),
+            "estimated_fees_usd": round(fees, 4), "net_pnl_usd": round(gross-fees, 4),
+        })
+        position = None
+
+    # Signal is known only at candle close; fill is the following candle open.
+    for i in range(21, len(bars)-1):
+        if position is not None:
+            hit = _backtest_exit_for_candle(position, bars[i])
+            if hit:
+                close_position(bars[i], hit[0], hit[1])
+            continue
+        a = volatility[i]
+        if (fast[i] is None or slow[i] is None or a is None or a <= 0
+                or not (fast[i] > slow[i] and closes[i] > fast[i])):
+            continue
+        entry_bar = bars[i+1]
+        entry = float(entry_bar["o"])
+        if entry <= 0:
+            continue
+        position = {"entry": entry, "quantity": notional_usd/entry,
+                    "stop": entry-1.5*a, "target": entry+2.0*a,
+                    "entry_time": entry_bar.get("t")}
+        # Evaluate high/low occurring after the next-open fill on this same candle.
+        hit = _backtest_exit_for_candle(position, entry_bar)
+        if hit:
+            close_position(entry_bar, hit[0], hit[1])
+
+    if position is not None:
+        close_position(bars[-1], float(bars[-1]["c"]), "END_OF_DATA")
+
+    gross_values = [float(t["gross_pnl_usd"]) for t in trades]
+    fee_values = [float(t["estimated_fees_usd"]) for t in trades]
+    net_values = [float(t["net_pnl_usd"]) for t in trades]
+    gp, gl = sum(x for x in gross_values if x > 0), -sum(x for x in gross_values if x < 0)
+    np_, nl = sum(x for x in net_values if x > 0), -sum(x for x in net_values if x < 0)
+    wins, losses = sum(x > 0 for x in net_values), sum(x < 0 for x in net_values)
+    equity = peak = starting_equity
+    drawdown = 0.0
+    for value in net_values:
+        equity += value
+        peak = max(peak, equity)
+        if peak > 0:
+            drawdown = max(drawdown, (peak-equity)/peak*100)
+    def pf(profit, loss):
+        return round(profit/loss, 4) if loss > 0 else ("infinite" if profit > 0 else None)
+    metrics = {
+        "starting_equity_usd": round(starting_equity, 2),
+        "ending_equity_usd": round(equity, 2),
+        "net_pnl_usd": round(sum(net_values), 4),
+        "gross_pnl_usd": round(sum(gross_values), 4),
+        "estimated_fees_usd": round(sum(fee_values), 4),
+        "trades": len(trades), "wins": wins, "losses": losses,
+        "breakeven_trades": sum(x == 0 for x in net_values),
+        "win_rate_percent": round(wins/len(trades)*100, 2) if trades else 0,
+        "profit_factor": pf(gp, gl), "gross_profit_factor": pf(gp, gl),
+        "net_profit_factor": pf(np_, nl), "max_drawdown_percent": round(drawdown, 2),
+        "average_net_per_trade_usd": round(sum(net_values)/len(trades), 4) if trades else 0,
+    }
+    return {"trades": trades, "metrics": metrics}
+
 async def fetch_backtest_bars(timeframe: str, limit: int) -> tuple[list[dict], bool, int]:
     """Fetch up to limit BTC bars using Alpaca pagination; return oldest-to-newest bars."""
     endpoint = f"{DATA}/v1beta3/crypto/us/bars"
@@ -300,116 +397,25 @@ async def backtest(
             "status":"insufficient_data","automated_execution":False
         }
 
-    closes=[float(item["c"]) for item in bars]
-    fast=ema_series(closes,9)
-    slow=ema_series(closes,21)
-    volatility=atr_series(bars,14)
-    fee_rate=0.0025  # Explicit estimate: 0.25% per side, not an account fee quote.
-    stop_multiple=1.5
-    target_multiple=2.0
-    position=None
-    trades=[]
-
-    # Signal is evaluated at candle close; fill is next candle open.
-    for index in range(21,len(bars)-1):
-        if position is None:
-            current_atr=volatility[index]
-            if (fast[index] is not None and slow[index] is not None
-                and current_atr is not None and current_atr>0
-                and fast[index]>slow[index] and closes[index]>fast[index]):
-                entry=float(bars[index+1]["o"])
-                quantity=notional_usd/entry
-                position={
-                    "entry":entry,"quantity":quantity,
-                    "stop":entry-stop_multiple*current_atr,
-                    "target":entry+target_multiple*current_atr,
-                    "entry_time":bars[index+1].get("t")
-                }
-        else:
-            candle=bars[index]
-            hit_stop=float(candle["l"])<=position["stop"]
-            hit_target=float(candle["h"])>=position["target"]
-            if hit_stop or hit_target:
-                # Conservative rule if both levels occur in one candle: stop first.
-                exit_price=position["stop"] if hit_stop else position["target"]
-                gross=(exit_price-position["entry"])*position["quantity"]
-                fees=(position["entry"]*position["quantity"]+exit_price*position["quantity"])*fee_rate
-                trades.append({
-                    "entry_time":position["entry_time"],"exit_time":candle.get("t"),
-                    "entry_price":round(position["entry"],2),"exit_price":round(exit_price,2),
-                    "exit_reason":"STOP_LOSS" if hit_stop else "TAKE_PROFIT",
-                    "gross_pnl_usd":round(gross,4),"estimated_fees_usd":round(fees,4),
-                    "net_pnl_usd":round(gross-fees,4)
-                })
-                position=None
-
-    if position is not None:
-        exit_price=closes[-1]
-        gross=(exit_price-position["entry"])*position["quantity"]
-        fees=(position["entry"]*position["quantity"]+exit_price*position["quantity"])*fee_rate
-        trades.append({
-            "entry_time":position["entry_time"],"exit_time":bars[-1].get("t"),
-            "entry_price":round(position["entry"],2),"exit_price":round(exit_price,2),
-            "exit_reason":"END_OF_DATA","gross_pnl_usd":round(gross,4),
-            "estimated_fees_usd":round(fees,4),"net_pnl_usd":round(gross-fees,4)
-        })
-
-    # Separate gross trading edge from fee-adjusted results. A zero-PnL
-    # trade is neither a win nor a loss; fees are already included in net PnL.
-    gross_values=[float(item["gross_pnl_usd"]) for item in trades]
-    fee_values=[float(item["estimated_fees_usd"]) for item in trades]
-    net_values=[float(item["net_pnl_usd"]) for item in trades]
-    gross_profit=sum(value for value in gross_values if value>0)
-    gross_loss=-sum(value for value in gross_values if value<0)
-    net_profit=sum(value for value in net_values if value>0)
-    net_loss=-sum(value for value in net_values if value<0)
-    wins=sum(1 for value in net_values if value>0)
-    losses=sum(1 for value in net_values if value<0)
-    breakeven=sum(1 for value in net_values if value==0)
-    net_total=sum(net_values)
-    equity=starting_equity
-    peak=starting_equity
-    max_drawdown=0.0
-    for value in net_values:
-        equity+=value
-        peak=max(peak,equity)
-        if peak>0:
-            max_drawdown=max(max_drawdown,(peak-equity)/peak*100)
-    gross_profit_factor=(gross_profit/gross_loss) if gross_loss>0 else (None if gross_profit==0 else float("inf"))
-    net_profit_factor=(net_profit/net_loss) if net_loss>0 else (None if net_profit==0 else float("inf"))
-
+    result = run_ema_atr_backtest(bars, starting_equity, notional_usd)
+    trades, metrics = result["trades"], result["metrics"]
     return {
         "symbol":"BTC/USD","timeframe":timeframe,"bars_used":len(bars),
         "period":{"from":bars[0].get("t"),"to":bars[-1].get("t")},
-        "has_more_data":has_more_data,
-        "data_pages_fetched":data_pages,
-        "requested_bars":limit,
-        "history_complete_for_request":len(bars) == limit,
+        "has_more_data":has_more_data,"data_pages_fetched":data_pages,
+        "requested_bars":limit,"history_complete_for_request":len(bars) == limit,
         "strategy":{
-            "direction":"LONG_ONLY","entry":"EMA9 > EMA21 and close > EMA9; fill next candle open",
+            "direction":"LONG_ONLY",
+            "entry":"EMA9 > EMA21 and close > EMA9; fill next candle open; evaluate entry candle range",
             "stop_loss":"1.5 x ATR14","take_profit":"2.0 x ATR14",
             "position_notional_usd":notional_usd,
-            "estimated_fee_per_side_percent":fee_rate*100,
-            "same_candle_stop_and_target":"STOP_LOSS_FIRST"
+            "estimated_fee_per_side_percent":0.25,
+            "same_candle_stop_and_target":"STOP_LOSS_FIRST",
+            "gap_fill":"Stop gaps fill at candle open; target gaps fill at candle open; intrabar path otherwise unknown"
         },
-        "metrics":{
-            "starting_equity_usd":round(starting_equity,2),
-            "ending_equity_usd":round(equity,2),
-            "net_pnl_usd":round(net_total,4),
-            "gross_pnl_usd":round(sum(gross_values),4),
-            "estimated_fees_usd":round(sum(fee_values),4),
-            "trades":len(trades),"wins":wins,"losses":losses,"breakeven_trades":breakeven,
-            "win_rate_percent":round(wins/len(trades)*100,2) if trades else 0,
-            "profit_factor":round(gross_profit_factor,4) if gross_profit_factor is not None and gross_profit_factor != float("inf") else ("infinite" if gross_profit_factor == float("inf") else None),
-            "gross_profit_factor":round(gross_profit_factor,4) if gross_profit_factor is not None and gross_profit_factor != float("inf") else ("infinite" if gross_profit_factor == float("inf") else None),
-            "net_profit_factor":round(net_profit_factor,4) if net_profit_factor is not None and net_profit_factor != float("inf") else ("infinite" if net_profit_factor == float("inf") else None),
-            "max_drawdown_percent":round(max_drawdown,2),
-            "average_net_per_trade_usd":round(net_total/len(trades),4) if trades else 0
-        },
-        "recent_trades":trades[-20:],
-        "status":"historical_simulation_not_a_live_result",
-        "automated_execution":False,
-        "warning":"Fee rate is an estimate, not a verified Alpaca fee. OHLC candles cannot reveal intrabar order; stop is assumed first when both levels are touched. Results are not a promise of future performance."
+        "metrics":metrics,"recent_trades":trades[-20:],
+        "status":"historical_simulation_not_a_live_result","automated_execution":False,
+        "warning":"Fee rate is an estimate (0.25% per side), not a verified Alpaca fee. OHLC candles cannot reveal intrabar order; stop is assumed first when both levels are touched. Entry candle is evaluated after next-open fill. No slippage/spread model is applied; results are not a promise of future performance."
     }
 
 
