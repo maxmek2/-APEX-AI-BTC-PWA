@@ -291,15 +291,24 @@ async function refresh(){
     const mtfResults=await Promise.all([
       (async()=>{try{return {label:"15 MIN",data:await get("/signal?timeframe=15Min")};}
         catch(error){return {label:"15 MIN",data:null,error:error.message};}})(),
-      (async()=>{try{const result=await get("/market/bars?timeframe=1Hour&limit=500");
-        return {label:"1 HOUR",data:analyzeBars(result.bars)};}
-        catch(error){return {label:"1 HOUR",data:null,error:error.message};}})(),
-      (async()=>{try{const result=await get("/market/bars?timeframe=1Hour&limit=500");
-        const fourHour=aggregateFourHour(result.bars);
-        return {label:"4 HOUR",data:analyzeBars(fourHour),error:fourHour.length<30?"Need at least 30 complete 4-hour candles; received "+fourHour.length:undefined};}
-        catch(error){return {label:"4 HOUR",data:null,error:error.message};}})()
+      (async()=>{try{
+        const result=await get("/market/bars?timeframe=1Hour&limit=5000");
+        const hourly=result.bars||[];
+        const fourHour=aggregateFourHour(hourly);
+        return [
+          {label:"1 HOUR",data:analyzeBars(hourly),error:hourly.length<30?"Need at least 30 hourly candles; received "+hourly.length:undefined},
+          {label:"4 HOUR",data:analyzeBars(fourHour),error:fourHour.length<30?"Need at least 30 complete 4-hour candles; received "+fourHour.length:undefined}
+        ];
+      }catch(error){
+        return [
+          {label:"1 HOUR",data:null,error:error.message},
+          {label:"4 HOUR",data:null,error:error.message}
+        ];
+      }})()
     ]);
-    renderMTFConfirmation(signal,mtfResults);
+    const flatMtfResults=[mtfResults[0],...mtfResults[1]];
+
+    renderMTFConfirmation(signal,flatMtfResults);
     renderEntryQuality(signal,chartBars);
   }catch(error){
     document.getElementById("signal-value").textContent="ENGINE OFFLINE";
