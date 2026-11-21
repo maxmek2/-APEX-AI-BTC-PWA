@@ -509,19 +509,31 @@ async def _exit_manager_tick():
             _exit_manager["last_event"] = "WAITING_FOR_VALID_MARKET_PRICE"
             return
 
+        stop = float(_exit_manager.get("stop_price") or 0)
+        target = float(_exit_manager.get("target_price") or 0)
+        if stop <= 0 or target <= 0 or not (stop < entry < target):
+            _exit_manager["last_event"] = "BLOCKED_INVALID_PROTECTIVE_LEVELS"
+            _exit_manager["armed"] = False
+            return
+
         reason = None
-        if price <= float(_exit_manager["stop_price"]):
+        if price <= stop:
             reason = "STOP_LOSS_TRIGGERED"
-        elif price >= float(_exit_manager["target_price"]):
+        elif price >= target:
             reason = "TAKE_PROFIT_TRIGGERED"
 
         if reason:
-            _exit_manager["last_event"] = reason + "_CLOSING_POSITION"
-            result = await _paper_request("DELETE", "/v2/positions/BTCUSD")
-            _exit_manager["close_order_id"] = result.get("id")
-            _exit_manager["last_event"] = reason + "_CLOSE_ORDER_SUBMITTED"
-            # Disarm after one close attempt; user must inspect the order/fill.
+            # Disarm BEFORE the broker write so a timeout/restart cannot cause
+            # repeated close requests on every five-second poll.
             _exit_manager["armed"] = False
+            _exit_manager["last_event"] = reason + "_CLOSE_REQUEST_IN_FLIGHT"
+            try:
+                result = await _paper_request("DELETE", "/v2/positions/BTCUSD")
+                _exit_manager["close_order_id"] = result.get("id")
+                _exit_manager["last_event"] = reason + "_CLOSE_REQUEST_ACCEPTED"
+            except Exception:
+                _exit_manager["last_event"] = reason + "_CLOSE_REQUEST_FAILED_INSPECT_BROKER"
+                raise
 
 async def _exit_manager_loop():
     while True:
@@ -758,6 +770,16 @@ async def _auto_entry_tick():
             if not bar_time or bar_time == _auto_entry.get("last_signal_bar"):
                 _auto_entry["last_event"] = "WAITING_FOR_NEW_5MIN_CANDLE"
                 return
+            # Fail closed on stale/future market bars. Do not trade a delayed feed.
+            try:
+                bar_dt = datetime.fromisoformat(str(bar_time).replace("Z", "+00:00"))
+                bar_age = (datetime.now(timezone.utc) - bar_dt).total_seconds()
+            except (TypeError, ValueError):
+                _auto_entry["last_event"] = "BLOCKED_INVALID_SIGNAL_TIMESTAMP"
+                return
+            if bar_age < -30 or bar_age > 600:
+                _auto_entry["last_event"] = "BLOCKED_STALE_SIGNAL_BAR"
+                return
 
             quote_data = await get_json(f"{DATA}/v1beta3/crypto/us/latest/quotes", {"symbols": "BTC/USD"})
             quote = quote_data.get("quotes", {}).get("BTC/USD", {})
@@ -872,6 +894,15 @@ async def auto_entry_dry_run():
     bar_time = signal_data.get("last_bar_time")
     same_bar = bool(bar_time and bar_time == _auto_entry.get("last_signal_bar"))
     add_check("new_signal_bar", not same_bar and bool(bar_time), "New M5 candle" if not same_bar and bar_time else "Missing or already processed M5 candle")
+    bar_fresh = False
+    bar_age = None
+    try:
+        bar_dt = datetime.fromisoformat(str(bar_time).replace("Z", "+00:00"))
+        bar_age = (datetime.now(timezone.utc) - bar_dt).total_seconds()
+        bar_fresh = -30 <= bar_age <= 600
+    except (TypeError, ValueError):
+        pass
+    add_check("fresh_signal_bar", bar_fresh, f"Signal candle age {bar_age:.0f}s" if bar_age is not None else "Invalid or missing candle timestamp")
 
     cooldown_ok = True
     last_attempt = _auto_entry.get("last_entry_attempt")
