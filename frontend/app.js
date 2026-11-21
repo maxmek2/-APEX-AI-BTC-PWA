@@ -1,345 +1,143 @@
-const API=window.APEX_API_BASE||"https://apex-ai-btc-pwa.onrender.com/api";
-let selectedTimeframe="5Min";
-const timeframeLabels={1Min:"1m",5Min:"5m",15Min:"15m",1Hour:"1h"};
-const money=value=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(value||0));
+const API = window.APEX_API_BASE || "https://apex-ai-btc-pwa.onrender.com/api";
+let selectedTimeframe = "5Min";
+const labels = { "1Min":"1m", "5Min":"5m", "15Min":"15m", "1Hour":"1h" };
+const money = value => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(value || 0));
+const byId = id => document.getElementById(id);
 
-async function get(path){
-  let response;
-  try{
-    response=await fetch(API+path,{method:"GET",headers:{Accept:"application/json"},cache:"no-store"});
-  }catch(error){
-    const detail=error?.message||String(error);
-    throw new Error("Network/CORS failure at "+path+": "+detail);
-  }
-  if(!response.ok){
-    let detail="";
-    try{detail=(await response.text()).slice(0,180)}catch(_){}
-    throw new Error("HTTP "+response.status+" at "+path+(detail?": "+detail:""));
-  }
-  try{return await response.json()}
-  catch(_){throw new Error("Invalid JSON response at "+path)}
+async function get(path) {
+  const response = await fetch(API + path,{headers:{Accept:"application/json"},cache:"no-store"});
+  if (!response.ok) throw new Error("HTTP " + response.status + " at " + path);
+  return response.json();
 }
-
-function showConnection(message,ok=false){
-  const element=document.getElementById("connection");
-  if(!element)return;
-  element.textContent=message;
-  element.style.color=ok?"var(--green)":"#ffb27d";
-  element.title=message;
+function setText(id,value){const el=byId(id);if(el)el.textContent=value;}
+function setConnection(message,ok=false){
+  const el=byId("connection"); if(!el)return;
+  el.textContent=message; el.style.color=ok?"var(--green)":"#ffb27d";
 }
-
 function ema(values,period){
-  const k=2/(period+1);
-  let previous=values[0];
-  return values.map((value,index)=>{
-    if(index===0)return previous;
-    previous=value*k+previous*(1-k);
-    return previous;
-  });
+  if(values.length<period)return [];
+  const out=[]; let value=values.slice(0,period).reduce((a,b)=>a+b,0)/period;
+  for(let i=0;i<period-1;i++)out.push(null);
+  out.push(value); const alpha=2/(period+1);
+  for(let i=period;i<values.length;i++){value=alpha*values[i]+(1-alpha)*value;out.push(value);}
+  return out;
 }
-
-function calculateATR(candles,period=14){
-  const ranges=candles.map((bar,index)=>{
-    if(index===0)return bar.h-bar.l;
-    const previousClose=candles[index-1].c;
-    return Math.max(bar.h-bar.l,Math.abs(bar.h-previousClose),Math.abs(bar.l-previousClose));
-  });
-  if(ranges.length<period)return null;
-  return ranges.slice(-period).reduce((sum,value)=>sum+value,0)/period;
+function atr(bars,period=14){
+  if(bars.length<period+1)return null;
+  const tr=[];
+  for(let i=1;i<bars.length;i++){
+    const b=bars[i],p=bars[i-1].c;
+    tr.push(Math.max(b.h-b.l,Math.abs(b.h-p),Math.abs(b.l-p)));
+  }
+  let value=tr.slice(0,period).reduce((a,b)=>a+b,0)/period;
+  for(let i=period;i<tr.length;i++)value=(value*(period-1)+tr[i])/period;
+  return value;
 }
-
-function renderChart(bars){
-  const svg=document.getElementById("price-chart");
-  if(!svg||!bars?.length)return;
-
-  const candles=bars.map(bar=>({
-    o:Number(bar.o),h:Number(bar.h),l:Number(bar.l),c:Number(bar.c)
-  })).filter(bar=>[bar.o,bar.h,bar.l,bar.c].every(Number.isFinite));
-  if(!candles.length)return;
-
-  const closes=candles.map(bar=>bar.c);
-  const ema9=ema(closes,9);
-  const ema21=ema(closes,21);
-  const atr14=calculateATR(candles,14);
-
-  const rawLow=Math.min(...candles.map(bar=>bar.l),...ema9,...ema21);
-  const rawHigh=Math.max(...candles.map(bar=>bar.h),...ema9,...ema21);
-  const padding=(rawHigh-rawLow)*0.08||1;
-  const low=rawLow-padding;
-  const high=rawHigh+padding;
-  const range=high-low||1;
-  const left=12,right=888,top=34,bottom=300;
-  const y=value=>bottom-((value-low)/range)*(bottom-top);
-  const step=(right-left)/candles.length;
-  const bodyWidth=Math.max(2,Math.min(11,step*0.62));
-
-  const shapes=candles.map((bar,index)=>{
-    const x=left+step*(index+0.5);
-    const rising=bar.c>=bar.o;
-    const color=rising?"#35d49a":"#ff6b78";
-    const bodyTop=Math.min(y(bar.o),y(bar.c));
-    const bodyHeight=Math.max(1.5,Math.abs(y(bar.o)-y(bar.c)));
-    return `<g stroke="${color}" fill="${color}">
-      <line x1="${x}" y1="${y(bar.h)}" x2="${x}" y2="${y(bar.l)}" stroke-width="1.2"/>
-      <rect x="${x-bodyWidth/2}" y="${bodyTop}" width="${bodyWidth}" height="${bodyHeight}" rx="0.7"/>
-    </g>`;
+function renderChart(rawBars){
+  const svg=byId("price-chart"); if(!svg)return;
+  const bars=(rawBars||[]).map(b=>({o:+b.o,h:+b.h,l:+b.l,c:+b.c}))
+    .filter(b=>[b.o,b.h,b.l,b.c].every(Number.isFinite));
+  if(!bars.length){svg.innerHTML="";setText("chart-meta","No candle data received");return;}
+  const closes=bars.map(b=>b.c), e9=ema(closes,9), e21=ema(closes,21), a=atr(bars);
+  const lo=Math.min(...bars.map(b=>b.l),...e9.filter(Number.isFinite),...e21.filter(Number.isFinite));
+  const hi=Math.max(...bars.map(b=>b.h),...e9.filter(Number.isFinite),...e21.filter(Number.isFinite));
+  const pad=(hi-lo)*.08||1, min=lo-pad, max=hi+pad, left=12,right=888,top=34,bottom=300;
+  const y=v=>bottom-(v-min)/(max-min)*(bottom-top), step=(right-left)/bars.length, width=Math.max(2,Math.min(11,step*.62));
+  const candles=bars.map((b,i)=>{
+    const x=left+step*(i+.5),color=b.c>=b.o?"#35d49a":"#ff6b78";
+    const bodyY=Math.min(y(b.o),y(b.c)),bodyH=Math.max(1.5,Math.abs(y(b.o)-y(b.c)));
+    return '<g stroke="'+color+'" fill="'+color+'"><line x1="'+x+'" y1="'+y(b.h)+'" x2="'+x+'" y2="'+y(b.l)+'" stroke-width="1.3"/><rect x="'+(x-width/2)+'" y="'+bodyY+'" width="'+width+'" height="'+bodyH+'" rx="0.7"/></g>';
   }).join("");
-
-  const linePath=values=>values.map((value,index)=>{
-    const x=left+step*(index+0.5);
-    return `${index===0?"M":"L"} ${x.toFixed(2)} ${y(value).toFixed(2)}`;
-  }).join(" ");
-  const overlays=`
-    <path d="${linePath(ema9)}" fill="none" stroke="#f5c451" stroke-width="2" stroke-linejoin="round"/>
-    <path d="${linePath(ema21)}" fill="none" stroke="#65a9ff" stroke-width="2" stroke-linejoin="round"/>
-    <g font-size="11" font-weight="700">
-      <text x="12" y="15" fill="#f5c451">EMA 9</text>
-      <text x="68" y="15" fill="#65a9ff">EMA 21</text>
-      <text x="145" y="15" fill="#c4d0df">ATR 14: ${atr14==null?"—":money(atr14)}</text>
-    </g>`;
-
-  svg.innerHTML=`<g stroke="#203149" stroke-width="1">${[70,125,180,235,300].map(yv=>`<line x1="0" y1="${yv}" x2="900" y2="${yv}"/>`).join("")}</g>`+shapes+overlays;
-  document.getElementById("chart-meta").textContent=`${candles.length} ${timeframeLabels[selectedTimeframe]||"5m"} candles · ATR 14: ${atr14==null?"need 14 candles":money(atr14)}`;
-  const chartLabel=document.getElementById("chart-time-label");if(chartLabel)chartLabel.textContent=timeframeLabels[selectedTimeframe]||"5m";
-  const atrMini=document.getElementById("atr-mini");if(atrMini)atrMini.textContent=atr14==null?"—":money(atr14);
+  const path=series=>series.map((v,i)=>v==null?"":(i?"L ":"M ")+(left+step*(i+.5)).toFixed(2)+" "+y(v).toFixed(2)).filter(Boolean).join(" ");
+  const grid=[70,125,180,235,300].map(v=>'<line x1="0" y1="'+v+'" x2="900" y2="'+v+'"/>').join("");
+  svg.innerHTML='<g stroke="#203149" stroke-width="1">'+grid+'</g>'+candles+
+    '<path d="'+path(e9)+'" fill="none" stroke="#f5c451" stroke-width="2"/>'+
+    '<path d="'+path(e21)+'" fill="none" stroke="#65a9ff" stroke-width="2"/>'+
+    '<g font-size="11" font-weight="700"><text x="12" y="15" fill="#f5c451">EMA 9</text><text x="68" y="15" fill="#65a9ff">EMA 21</text><text x="145" y="15" fill="#c4d0df">ATR 14: '+(a==null?"—":money(a))+'</text></g>';
+  setText("chart-meta",bars.length+" "+(labels[selectedTimeframe]||"5m")+" candles · ATR 14: "+(a==null?"need 15 candles":money(a)));
+  setText("chart-time-label",labels[selectedTimeframe]||"5m");setText("atr-mini",a==null?"—":money(a));
 }
-
-function renderSignalConfirmation(signal,bars){
-  const target=document.getElementById("signal-checks");
-  if(!target)return;
-  const valid=signal&&signal.ema_9!=null&&signal.ema_21!=null&&signal.atr_14!=null;
-  if(!valid){
-    target.innerHTML="<p class=\"muted\">Not enough data to confirm the current setup.</p>";
-    return;
-  }
-  const emaBull=Number(signal.ema_9)>Number(signal.ema_21);
-  const priceAbove=Number(signal.last_close)>Number(signal.ema_9);
-  const atrOk=Number(signal.atr_14)>0;
-  const latest=bars?.length?Number(bars[bars.length-1].c):Number(signal.last_close);
-  const prior=bars?.length>1?Number(bars[bars.length-2].c):null;
-  const momentum=prior==null?null:latest>prior?"UP":latest<prior?"DOWN":"FLAT";
-  const row=(label,passed,detail)=>`<div class="check-row"><span>${label}</span><strong class="${passed===null?"muted":passed?"check-pass":"check-fail"}">${detail}</strong></div>`;
-  target.innerHTML=[
-    row("EMA trend · EMA 9 vs EMA 21",emaBull,emaBull?"BULLISH":"NOT BULLISH"),
-    row("Price position · close vs EMA 9",priceAbove,priceAbove?"ABOVE":"NOT ABOVE"),
-    row("ATR 14 · volatility available",atrOk,atrOk?"VALID":"UNAVAILABLE"),
-    row("Last-candle momentum · informational",momentum==="UP"?true:momentum==="DOWN"?false:null,momentum||"UNKNOWN")
-  ].join("");
-}
-
-
-
-function analyzeBars(bars){
-  if(!Array.isArray(bars)||bars.length<30)return {signal:"INSUFFICIENT_DATA",bars_received:bars?.length||0};
-  const candles=bars.map(bar=>({o:Number(bar.o),h:Number(bar.h),l:Number(bar.l),c:Number(bar.c),t:bar.t}))
-    .filter(bar=>[bar.o,bar.h,bar.l,bar.c].every(Number.isFinite));
-  if(candles.length<30)return {signal:"INSUFFICIENT_DATA",bars_received:candles.length};
-  const closes=candles.map(bar=>bar.c);
-  const calcEMA=period=>{
-    const alpha=2/(period+1);
-    let value=closes.slice(0,period).reduce((sum,n)=>sum+n,0)/period;
-    for(let i=period;i<closes.length;i++)value=alpha*closes[i]+(1-alpha)*value;
-    return value;
-  };
-  const ranges=[];
-  for(let i=1;i<candles.length;i++){
-    const bar=candles[i],prev=candles[i-1].c;
-    ranges.push(Math.max(bar.h-bar.l,Math.abs(bar.h-prev),Math.abs(bar.l-prev)));
-  }
-  let atr=ranges.slice(0,14).reduce((sum,n)=>sum+n,0)/14;
-  for(let i=14;i<ranges.length;i++)atr=(atr*13+ranges[i])/14;
-  const fast=calcEMA(9),slow=calcEMA(21),last=closes[closes.length-1];
+function signalFromBars(bars){
+  const closes=bars.map(b=>+b.c).filter(Number.isFinite);
+  if(closes.length<30)return null;
+  const fast=ema(closes,9).at(-1),slow=ema(closes,21).at(-1),last=closes.at(-1),vol=atr(bars);
   const direction=fast>slow&&last>fast?"LONG_SETUP":fast<slow&&last<fast?"SHORT_SETUP":"WAIT";
-  return {signal:direction,ema_9:Number(fast.toFixed(2)),ema_21:Number(slow.toFixed(2)),
-    atr_14:Number(atr.toFixed(2)),last_close:last,bars_used:candles.length,last_bar_time:candles[candles.length-1].t};
+  return {signal:direction,ema_9:fast,ema_21:slow,last_close:last,atr_14:vol,last_bar_time:bars.at(-1).t};
 }
-
-function aggregateFourHour(hourBars){
-  const groups=new Map();
-  for(const bar of hourBars||[]){
-    const time=Date.parse(bar.t);
-    if(!Number.isFinite(time))continue;
-    const bucket=Math.floor(time/(4*60*60*1000))*4*60*60*1000;
-    if(!groups.has(bucket))groups.set(bucket,[]);
-    groups.get(bucket).push(bar);
-  }
-  const result=[];
-  for(const [bucket,items] of [...groups.entries()].sort((a,b)=>a[0]-b[0])){
-    items.sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));
-    if(items.length!==4)continue;
-    const hours=items.map(item=>new Date(item.t).getUTCHours());
-    const expected=[0,1,2,3].map(offset=>new Date(bucket+offset*60*60*1000).getUTCHours());
-    if(hours.some((hour,index)=>hour!==expected[index]))continue;
-    result.push({t:new Date(bucket).toISOString(),o:Number(items[0].o),
-      h:Math.max(...items.map(item=>Number(item.h))),
-      l:Math.min(...items.map(item=>Number(item.l))),
-      c:Number(items[3].c)});
-  }
-  return result;
+function renderChecks(signal,bars){
+  const target=byId("signal-checks");if(!target)return;
+  if(!signal){target.textContent="Not enough candle data to confirm the setup.";return;}
+  const up=signal.ema_9>signal.ema_21,above=signal.last_close>signal.ema_9;
+  const momentum=bars.length>1?(+bars.at(-1).c>+bars.at(-2).c?"UP":+bars.at(-1).c<+bars.at(-2).c?"DOWN":"FLAT"):"UNKNOWN";
+  const rows=[["EMA trend · EMA 9 vs EMA 21",up?"BULLISH":"NOT BULLISH",up],["Price position · close vs EMA 9",above?"ABOVE":"NOT ABOVE",above],["ATR 14 · volatility available",signal.atr_14>0?"VALID":"UNAVAILABLE",signal.atr_14>0],["Last-candle momentum · informational",momentum,momentum==="UP"]];
+  target.innerHTML=rows.map(r=>'<div class="check-row"><span>'+r[0]+'</span><strong class="'+(r[2]?"check-pass":"check-fail")+'">'+r[1]+'</strong></div>').join("");
 }
-
-function renderMTFConfirmation(baseSignal,timeframeResults){
-  const target=document.getElementById("mtf-checks");
-  const summary=document.getElementById("mtf-summary");
-  if(!target||!summary)return;
-  const base=baseSignal?.signal;
-  const directional=["LONG_SETUP","SHORT_SETUP"].includes(base);
-  const rows=[{label:"5 MIN",data:baseSignal},...timeframeResults];
-  if(!directional){
-    summary.textContent="The 5-minute engine has no directional setup. Higher timeframes are shown for context only.";
-  }else{
-    const aligned=rows.filter(item=>item.data?.signal===base).length;
-    summary.textContent=aligned+" of 4 timeframes match the 5-minute "+(base==="LONG_SETUP"?"LONG":"SHORT")+" direction.";
+function renderQuality(signal,bars){
+  if(!byId("entry-score"))return;
+  if(!signal||!["LONG_SETUP","SHORT_SETUP"].includes(signal.signal)||bars.length<2){
+    setText("entry-score","—");setText("entry-quality-label","NO CONFIRMED DIRECTION");
+    setText("entry-quality-detail","Waiting for a directional setup and sufficient candle data.");if(byId("entry-quality-checks"))byId("entry-quality-checks").innerHTML="";return;
   }
-  target.innerHTML=rows.map(item=>{
-    const status=item.data?.signal;
-    const label=status==="LONG_SETUP"?"LONG":status==="SHORT_SETUP"?"SHORT":status==="WAIT"?"WAIT":status==="INSUFFICIENT_DATA"?"NOT ENOUGH DATA":"UNAVAILABLE";
-    const same=directional&&status===base;
-    const opposite=directional&&["LONG_SETUP","SHORT_SETUP"].includes(status)&&status!==base;
-    const cls=same?"check-pass":opposite?"check-fail":"muted";
-    const detail=item.data?.ema_9!=null&&item.data?.ema_21!=null
-      ?"EMA 9 "+money(item.data.ema_9)+" · EMA 21 "+money(item.data.ema_21)
-      :(item.error||"Signal unavailable");
-    return `<div class="mtf-row"><div><strong>${item.label}</strong><small>${detail}</small></div><strong class="${cls}">${label}</strong></div>`;
-  }).join("");
+  const isLong=signal.signal==="LONG_SETUP",last=bars.at(-1),prev=bars.at(-2);
+  const tests=[["EMA trend alignment",35,isLong?signal.ema_9>signal.ema_21:signal.ema_9<signal.ema_21],
+    ["Price vs EMA 9",25,isLong?signal.last_close>signal.ema_9:signal.last_close<signal.ema_9],
+    ["Last-close momentum",20,isLong?+last.c>+prev.c:+last.c<+prev.c],
+    ["Latest candle direction",10,isLong?+last.c>+last.o:+last.c<+last.o],
+    ["ATR 14 available",10,signal.atr_14>0]];
+  const score=tests.reduce((sum,t)=>sum+(t[2]?t[1]:0),0);
+  setText("entry-score",score+"/100");setText("entry-quality-label",score>=85?"STRONG ALIGNMENT":score>=70?"GOOD ALIGNMENT":score>=50?"MIXED ALIGNMENT":"WEAK ALIGNMENT");
+  setText("entry-quality-detail",(isLong?"LONG":"SHORT")+" rule-alignment score · heuristic, not a win probability or entry instruction.");
+  if(byId("entry-quality-checks"))byId("entry-quality-checks").innerHTML=tests.map(t=>'<div class="check-row"><span>'+t[0]+' · '+t[1]+' pts</span><strong class="'+(t[2]?"check-pass":"check-fail")+'">'+(t[2]?"PASS":"NO POINTS")+'</strong></div>').join("");
 }
-
-
-function renderEntryQuality(signal,bars){
-  const scoreEl=document.getElementById("entry-score");
-  const labelEl=document.getElementById("entry-quality-label");
-  const detailEl=document.getElementById("entry-quality-detail");
-  const checksEl=document.getElementById("entry-quality-checks");
-  if(!scoreEl||!labelEl||!detailEl||!checksEl)return;
-
-  const direction=signal?.signal;
-  const candles=(bars||[]).map(bar=>({
-    o:Number(bar.o),c:Number(bar.c)
-  })).filter(bar=>Number.isFinite(bar.o)&&Number.isFinite(bar.c));
-  if(!["LONG_SETUP","SHORT_SETUP"].includes(direction)||candles.length<2||
-     signal.ema_9==null||signal.ema_21==null||signal.atr_14==null){
-    scoreEl.textContent="—";
-    labelEl.textContent="NO CONFIRMED DIRECTION";
-    detailEl.textContent="A directional setup and enough candle data are required before a score can be calculated.";
-    checksEl.innerHTML="";
-    return;
-  }
-
-  const isLong=direction==="LONG_SETUP";
-  const latest=candles[candles.length-1];
-  const previous=candles[candles.length-2];
-  const emaAligned=isLong?Number(signal.ema_9)>Number(signal.ema_21):Number(signal.ema_9)<Number(signal.ema_21);
-  const priceAligned=isLong?Number(signal.last_close)>Number(signal.ema_9):Number(signal.last_close)<Number(signal.ema_9);
-  const momentumAligned=isLong?latest.c>previous.c:latest.c<previous.c;
-  const candleAligned=isLong?latest.c>latest.o:latest.c<latest.o;
-  const atrValid=Number(signal.atr_14)>0;
-  const parts=[
-    {name:"EMA trend alignment",points:35,ok:emaAligned},
-    {name:"Price vs EMA 9",points:25,ok:priceAligned},
-    {name:"Last-close momentum",points:20,ok:momentumAligned},
-    {name:"Latest candle direction",points:10,ok:candleAligned},
-    {name:"ATR 14 available",points:10,ok:atrValid}
-  ];
-  const score=parts.reduce((sum,item)=>sum+(item.ok?item.points:0),0);
-  const quality=score>=85?"STRONG ALIGNMENT":score>=70?"GOOD ALIGNMENT":score>=50?"MIXED ALIGNMENT":"WEAK ALIGNMENT";
-  scoreEl.textContent=String(score)+"/100";
-  labelEl.textContent=quality;
-  detailEl.textContent=(isLong?"LONG":"SHORT")+" rule-alignment score · heuristic, not a win probability or entry instruction.";
-  checksEl.innerHTML=parts.map(item=>
-    `<div class="check-row"><span>${item.name} · ${item.points} pts</span><strong class="${item.ok?"check-pass":"check-fail"}">${item.ok?"PASS":"NO POINTS"}</strong></div>`
-  ).join("");
-}
-
 async function refresh(){
-  showConnection("Checking API…");
-  let accountConnected=false;
-
-  try{
-    const account=await get("/account");
-    document.getElementById("equity").textContent=money(account.equity);
-    document.getElementById("buying").textContent=money(account.buying_power);
-    const cash=document.getElementById("cash");if(cash)cash.textContent=money(account.cash);
-    const status=document.getElementById("account-status");if(status)status.textContent=account.status||"Connected";
-    showConnection("ACCOUNT CONNECTED · PAPER",true);
-    accountConnected=true;
-  }catch(error){
-    showConnection("API ERROR · "+error.message);
+  setConnection("Connecting to API…");
+  const results=await Promise.allSettled([
+    get("/account"),get("/positions"),get("/market/btc"),
+    get("/market/bars?timeframe="+selectedTimeframe+"&limit=100"),
+    get("/market/bars?timeframe=15Min&limit=100")
+  ]);
+  const account=results[0];
+  if(account.status==="fulfilled"){
+    const a=account.value;setText("equity",money(a.equity));setText("cash",money(a.cash));
+    setText("buying",money(a.buying_power));setText("account-status",a.status||"Connected");
   }
-
-  try{
-    const positions=await get("/positions");
-    const list=document.getElementById("positions-list");
-    const count=document.getElementById("position-count");
-    if(count)count.textContent=String(positions.length||0);
-    if(list)list.textContent=positions.length?positions.map(p=>p.symbol+" · "+p.qty+" · P/L "+money(p.unrealized_pl)).join(" | "):"No open paper positions."; 
-  }catch(error){const list=document.getElementById("positions-list");if(list)list.textContent="Positions unavailable: "+error.message;}
-  try{
-    const market=await get("/market/btc");
-    if(market.price!=null)document.getElementById("price").textContent=money(market.price);
-    if(market.timestamp)document.getElementById("updated").textContent="Last trade "+new Date(market.timestamp).toLocaleString();
-    if(!accountConnected)document.getElementById("updated").textContent+=" · Market API works; account API failed";
-  }catch(error){
-    document.getElementById("updated").textContent="Market error: "+error.message;
+  const pos=results[1];
+  if(pos.status==="fulfilled"){
+    setText("position-count",String(pos.value.length));
+    setText("positions-list",pos.value.length?pos.value.map(p=>p.symbol+" · "+p.qty+" · P/L "+money(p.unrealized_pl)).join(" | "):"No open paper positions.");
+  }else setText("positions-list","Positions unavailable: "+pos.reason.message);
+  const market=results[2];
+  if(market.status==="fulfilled"){
+    setText("price",market.value.price==null?"—":money(market.value.price));
+    setText("updated",market.value.timestamp?"Last trade "+new Date(market.value.timestamp).toLocaleString():"Market data unavailable");
+  }else setText("updated","Market error: "+market.reason.message);
+  let bars=[];
+  if(results[3].status==="fulfilled"){
+    bars=results[3].value.bars||[];renderChart(bars);
+  }else setText("chart-meta","Chart error: "+results[3].reason.message);
+  const signal=signalFromBars(bars);
+  if(signal){
+    const names={LONG_SETUP:"LONG SETUP",SHORT_SETUP:"SHORT SETUP",WAIT:"WAIT"};
+    setText("signal-value",names[signal.signal]);setText("signal-mini",names[signal.signal]);
+    setText("trend-value",signal.ema_9>signal.ema_21?"Bullish":signal.ema_9<signal.ema_21?"Bearish":"Neutral");
+    setText("signal-detail","EMA 9: "+money(signal.ema_9)+" · EMA 21: "+money(signal.ema_21)+" · ATR 14: "+money(signal.atr_14));
+    setText("signal-time",signal.last_bar_time?"Last candle "+new Date(signal.last_bar_time).toLocaleString():"");
+  }else{
+    setText("signal-value","INSUFFICIENT DATA");setText("signal-mini","WAIT");
+    setText("signal-detail","Waiting for at least 30 valid candles.");setText("trend-value","—");
   }
-
-  let chartBars=[];
-  try{
-    const chart=await get("/market/bars?timeframe="+selectedTimeframe+"&limit=100");
-    chartBars=chart.bars||[];
-    renderChart(chartBars);
-  }catch(error){
-    document.getElementById("chart-meta").textContent="Chart error: "+error.message;
-  }
-
-  try{
-    const signal=await get("/signal?timeframe=5Min");
-    const names={LONG_SETUP:"LONG SETUP",SHORT_SETUP:"SHORT SETUP",WAIT:"WAIT",INSUFFICIENT_DATA:"INSUFFICIENT DATA"};
-    document.getElementById("signal-value").textContent=names[signal.signal]||"WAITING";
-    const mini=document.getElementById("signal-mini");if(mini)mini.textContent=names[signal.signal]||"WAIT";
-    const trend=document.getElementById("trend-value");if(trend)trend.textContent=signal.ema_9>signal.ema_21?"Bullish":signal.ema_9<signal.ema_21?"Bearish":"Neutral";
-    document.getElementById("signal-detail").textContent=signal.ema_9!=null?
-      "EMA 9: "+money(signal.ema_9)+" · EMA 21: "+money(signal.ema_21)+" · ATR 14: "+money(signal.atr_14):
-      "Waiting for at least 30 candles.";
-    document.getElementById("signal-time").textContent=signal.last_bar_time?"Last candle "+new Date(signal.last_bar_time).toLocaleString():"";
-    renderSignalConfirmation(signal,chartBars);
-    const mtfResults=await Promise.all([
-      (async()=>{try{return {label:"15 MIN",data:await get("/signal?timeframe=15Min")};}
-        catch(error){return {label:"15 MIN",data:null,error:error.message};}})(),
-      (async()=>{try{
-        const result=await get("/market/bars?timeframe=1Hour&limit=5000");
-        const hourly=result.bars||[];
-        const fourHour=aggregateFourHour(hourly);
-        return [
-          {label:"1 HOUR",data:analyzeBars(hourly),error:hourly.length<30?"Need at least 30 hourly candles; received "+hourly.length:undefined},
-          {label:"4 HOUR",data:analyzeBars(fourHour),error:fourHour.length<30?"Need at least 30 complete 4-hour candles; received "+fourHour.length:undefined}
-        ];
-      }catch(error){
-        return [
-          {label:"1 HOUR",data:null,error:error.message},
-          {label:"4 HOUR",data:null,error:error.message}
-        ];
-      }})()
-    ]);
-    const flatMtfResults=[mtfResults[0],...mtfResults[1]];
-
-    renderMTFConfirmation(signal,flatMtfResults);
-    renderEntryQuality(signal,chartBars);
-  }catch(error){
-    document.getElementById("signal-value").textContent="ENGINE OFFLINE";
-    document.getElementById("signal-detail").textContent="Signal error: "+error.message;
-    renderSignalConfirmation(null,[]);
-    renderMTFConfirmation(null,[{label:"15 MIN",data:null},{label:"1 HOUR",data:null},{label:"4 HOUR",data:null}]);
-    renderEntryQuality(null,[]);
-  }
+  renderChecks(signal,bars);renderQuality(signal,bars);
+  if(results[4].status==="fulfilled"){
+    const higher=signalFromBars(results[4].value.bars||[]);
+    setText("mtf-summary",higher?"15-minute context: "+higher.signal.replace("_SETUP",""):"15-minute data is not sufficient.");
+    if(byId("mtf-checks"))byId("mtf-checks").innerHTML=higher?'<div class="mtf-row"><div><strong>15 MIN</strong><small>EMA 9 '+money(higher.ema_9)+' · EMA 21 '+money(higher.ema_21)+'</small></div><strong>' + higher.signal.replace("_SETUP","")+'</strong></div>':"";
+  }else setText("mtf-summary","Higher timeframe data unavailable.");
+  const failed=results.filter(r=>r.status==="rejected");
+  if(failed.length===0)setConnection("ACCOUNT CONNECTED · PAPER",true);
+  else setConnection((account.status==="fulfilled"?"PARTIAL DATA · ":"API ERROR · ")+failed.map(r=>r.reason.message).join(" | "));
 }
-
-const timeframeControl=document.getElementById("timeframe");
-if(timeframeControl)timeframeControl.addEventListener("change",()=>{selectedTimeframe=timeframeControl.value;refresh();});
-
-if("serviceWorker"in navigator){
-  addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(error=>{
-    console.warn("PWA service worker registration failed:",error);
-  }));
-}
-refresh();
-setInterval(refresh,30000);
+const timeframeControl=byId("timeframe");
+if(timeframeControl)timeframeControl.addEventListener("change",()=>{selectedTimeframe=timeframeControl.value;refresh().catch(e=>setConnection("Dashboard error: "+e.message));});
+if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(e=>console.warn("Service worker:",e)));}
+refresh().catch(error=>setConnection("Dashboard error: "+error.message));
+setInterval(()=>refresh().catch(error=>setConnection("Dashboard error: "+error.message)),30000);
