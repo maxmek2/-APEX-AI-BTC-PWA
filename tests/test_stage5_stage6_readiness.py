@@ -80,3 +80,58 @@ def test_stage6_readiness_is_hard_locked_and_never_enables_live_trading():
     assert report["live_orders_enabled"] is False
     assert report["gates_passed"] == 0
     assert report["order_submitted"] is False
+
+
+def test_stage5_validation_requires_token(monkeypatch):
+    monkeypatch.setenv("APEX_API_TOKEN", "stage5-test-token")
+    with TestClient(main.app) as client:
+        response = client.get("/api/paper/validation")
+    assert response.status_code == 401
+
+
+def test_stage5_validation_flags_open_btc_order(monkeypatch):
+    monkeypatch.setenv("APEX_API_TOKEN", "stage5-test-token")
+    monkeypatch.setattr(main, "_paper_only_configured", lambda: True)
+    monkeypatch.setitem(main._auto_entry, "enabled", False)
+    monkeypatch.setitem(main._exit_manager, "armed", False)
+
+    async def fake_paper_request(method, path, params=None, body=None):
+        if path == "/v2/account":
+            return {"status": "ACTIVE", "equity": "100"}
+        if path == "/v2/positions":
+            return []
+        if path == "/v2/orders":
+            return [{"symbol": "BTC/USD", "status": "new"}]
+        raise AssertionError(path)
+
+    monkeypatch.setattr(main, "_paper_request", fake_paper_request)
+    with TestClient(main.app) as client:
+        response = client.get(
+            "/api/paper/validation",
+            headers={"Authorization": "Bearer stage5-test-token"},
+        )
+    assert response.status_code == 200
+    report = response.json()
+    assert report["result"] == "REQUIRES_REVIEW"
+    checks = {item["check"]: item["passed"] for item in report["checks"]}
+    assert checks["no_open_btc_orders"] is False
+
+
+def test_stage5_lifecycle_simulation_covers_stop_and_take_profit_without_broker_calls():
+    with TestClient(main.app) as client:
+        stop = client.post("/api/paper/lifecycle/simulate", json={
+            "entry_price": 100000, "atr_14": 1000,
+            "simulated_prices": [100100, 98500], "notional_usd": 10,
+        })
+        target = client.post("/api/paper/lifecycle/simulate", json={
+            "entry_price": 100000, "atr_14": 1000,
+            "simulated_prices": [101000, 103000], "notional_usd": 10,
+        })
+    assert stop.status_code == 200
+    assert target.status_code == 200
+    assert stop.json()["final_event"] == "SIMULATED_STOP_LOSS_EXIT"
+    assert target.json()["final_event"] == "SIMULATED_TAKE_PROFIT_EXIT"
+    for report in (stop.json(), target.json()):
+        assert report["order_submitted"] is False
+        assert report["alpaca_api_called"] is False
+        assert report["live_or_paper_positions_changed"] is False
