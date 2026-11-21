@@ -129,3 +129,30 @@
   .chart { height: 205px; }
   .ticker-price strong { font-size: 14px; }
 }
+
+
+/* v18: compact iPhone composition; preserve real account data */
+@media (max-width: 760px) {
+  .main-grid { grid-template-columns: minmax(0, 35%) minmax(0, 65%); gap: 7px; }
+  .side-column, .content-column { gap: 7px; }
+  .account-panel { padding: 8px; }
+  .account-panel .section-head { padding-bottom: 5px; }
+  .account-panel .equity-label { margin-top: 6px; }
+  .account-panel .equity-value { font-size: 21px; margin: 0 0 4px 8px; }
+  .account-panel .account-row { padding: 5px 0; font-size: 8px; }
+  .account-panel .account-row b { font-size: 8px; }
+  .account-panel > .muted { display: none; }
+  .account-panel .muted { display: none; }
+  .control-panel { padding: 8px; }
+  .control-panel .setting-row { padding: 5px 0; }
+  .control-panel .safety-note { font-size: 8px; }
+  .chart { height: 245px; }
+  .chart-legend { gap: 6px; }
+  .chart-legend span:last-child { flex-basis: 100%; }
+  .position-row { align-items: flex-start; }
+  .lower-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 390px) {
+  .chart { height: 220px; }
+  .main-grid { grid-template-columns: minmax(0, 35%) minmax(0, 65%); }
+}
