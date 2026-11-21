@@ -90,11 +90,11 @@ def test_auto_entry_caps_order_notional_to_broker_buying_power(monkeypatch):
             return {"equity": "100", "buying_power": "2"}
         if path == "/v2/positions":
             return []
-        if path == "/v2/orders":
-            return []
         if method == "POST" and path == "/v2/orders":
             submitted.append(body)
             return {"id": "paper-order", "status": "new"}
+        if path == "/v2/orders":
+            return []
         raise AssertionError(f"Unexpected broker request: {method} {path}")
 
     async def fake_signal(timeframe):
