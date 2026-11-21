@@ -359,7 +359,10 @@ async def backtest(
     return {
         "symbol":"BTC/USD","timeframe":timeframe,"bars_used":len(bars),
         "period":{"from":bars[0].get("t"),"to":bars[-1].get("t")},
-        "has_more_data":has_more_data,\n        "data_pages_fetched":data_pages,\n        "requested_bars":limit,\n        "history_complete_for_request":len(bars) == limit,
+        "has_more_data":has_more_data,
+        "data_pages_fetched":data_pages,
+        "requested_bars":limit,
+        "history_complete_for_request":len(bars) == limit,
         "strategy":{
             "direction":"LONG_ONLY","entry":"EMA9 > EMA21 and close > EMA9; fill next candle open",
             "stop_loss":"1.5 x ATR14","take_profit":"2.0 x ATR14",
