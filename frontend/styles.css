@@ -2,3 +2,5 @@
 .check-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);font-size:13px}.check-row strong{font-size:12px;letter-spacing:.4px}.check-pass{color:var(--green)}.check-fail{color:#ff8791}
 
 .score-heading{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:14px}.score-heading strong{font-size:32px;font-weight:800}.score-note{border-top:1px solid var(--line);padding-top:10px;margin-bottom:0}
+
+.mtf-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}.mtf-row>div{display:grid;gap:5px;min-width:0}.mtf-row>div strong{font-size:13px}.mtf-row small{font-size:11px;overflow-wrap:anywhere}.mtf-row>strong{font-size:12px;letter-spacing:.4px;white-space:nowrap}
