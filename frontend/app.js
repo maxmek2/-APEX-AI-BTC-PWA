@@ -77,7 +77,9 @@ function setupControls(){
  const tokenInput=$("paper-api-token");
  if(tokenInput){tokenInput.value=sessionStorage.getItem("apexPaperToken")||"";tokenInput.addEventListener("change",()=>{sessionStorage.setItem("apexPaperToken",tokenInput.value.trim());loadPaperEngineStatus();});}
  const tf=$("timeframe");tf.addEventListener("change",()=>{selectedTimeframe=tf.value;text("signal-timeframe",labels[selectedTimeframe].toUpperCase());refresh().catch(e=>setStatus(e.message));});
- $("run-backtest").addEventListener("click",runBacktest);\n const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);\n const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
+ $("run-backtest").addEventListener("click",runBacktest);
+ const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
+ const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
  $("stop-monitor").addEventListener("click",()=>{monitorStopped=true;monitorPaused=false;if(refreshTimer)clearInterval(refreshTimer);$("stop-monitor").textContent="■ Monitoring Stopped";$("pause-monitor").disabled=true;setStatus("MONITORING STOPPED");});
  $("view-report").addEventListener("click",()=>{location.hash="backtest-panel";runBacktest();});
