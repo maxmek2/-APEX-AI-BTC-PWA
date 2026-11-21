@@ -1,4 +1,4 @@
-const CACHE="apex-btc-shell-v19";
+const CACHE="apex-btc-shell-v20";
 const APP_SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest"];
 
 self.addEventListener("install",event=>{
