@@ -53,11 +53,31 @@ async function refresh(){
  const failures=results.filter(x=>x.status==="rejected");setStatus(failures.length?"PARTIAL DATA · "+failures.map(x=>x.reason.message).join(" · "):"ACCOUNT CONNECTED · PAPER",failures.length===0);
 }
 async function runBacktest(){const out=$("backtest-result");out.textContent="Running read-only historical simulation…";try{const r=await get("/backtest?timeframe="+selectedTimeframe+"&limit=10000&starting_equity=100&notional_usd=10"),m=r.metrics;if(!m){out.textContent="Backtest status: "+r.status+" · Bars: "+r.bars_used;return;}out.innerHTML='<div class="backtest-grid"><div><small>Ending equity</small><b>'+money(m.ending_equity_usd)+'</b></div><div><small>Net P&amp;L</small><b class="'+(m.net_pnl_usd>=0?"check-pass":"check-fail")+'">'+money(m.net_pnl_usd)+'</b></div><div><small>Trades</small><b>'+m.trades+'</b></div><div><small>Win rate</small><b>'+m.win_rate_percent+'%</b></div><div><small>Gross PF</small><b>'+(m.gross_profit_factor??"—")+'</b></div><div><small>Net PF</small><b>'+(m.net_profit_factor??"—")+'</b></div><div><small>Max drawdown</small><b>'+m.max_drawdown_percent+'%</b></div></div><small class="muted">Historical simulation · '+r.bars_used+' / '+r.requested_bars+' requested candles · '+(r.history_complete_for_request?"requested sample complete":"partial history")+(r.has_more_data?" · older data available":"")+(r.period?" · "+r.period.from+" to "+r.period.to:"")+'</small>'; }catch(e){out.textContent="Backtest unavailable: "+e.message;}}
+async function runStage5Validation(){
+ const out=$("stage5-result"),btn=$("run-stage5");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Reading Paper account, positions and open orders…";
+ try{
+  const data=await get("/paper/validation");
+  const checks=(data.checks||[]).map(c=>'<div class="check-row"><span>'+c.check.replaceAll("_"," ")+'</span><strong class="'+(c.passed?"check-pass":"check-fail")+'">'+(c.passed?"PASS":"REVIEW")+'</strong></div>').join("");
+  out.innerHTML='<strong class="'+(data.result==="CLEAN"?"check-pass":"check-fail")+'">'+data.result+'</strong><p>'+data.checks_passed+'/'+data.checks_total+' checks passed · Equity '+money(data.account?.equity)+' · BTC positions '+data.btc_open_positions+' · BTC open orders '+data.btc_open_orders+'</p>'+checks+'<small class="muted">Read-only snapshot · No order submitted. Clean status is not proof of lifecycle safety or profitability.</small>';
+ }catch(e){out.textContent="Stage 5 check unavailable: "+e.message+" · Confirm the Paper API token in Settings and backend deployment.";}
+ finally{btn.disabled=false;}
+}
+async function runStage6Readiness(){
+ const out=$("stage6-result"),btn=$("run-stage6");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Evaluating live-trading safety gates…";
+ try{
+  const data=await get("/live/readiness");
+  const gates=(data.gates||[]).map(g=>'<div class="check-row"><span>'+g.gate.replaceAll("_"," ")+'<small>'+g.detail+'</small></span><strong class="'+(g.passed?"check-pass":"check-fail")+'">'+(g.passed?"PASS":"BLOCKED")+'</strong></div>').join("");
+  out.innerHTML='<strong class="check-fail">'+data.result+' · '+data.gates_passed+'/'+data.gates_total+' gates passed</strong>'+gates+'<small class="muted">Live supported: NO · Live orders enabled: NO · No broker order call.</small>';
+ }catch(e){out.textContent="Stage 6 assessment unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
 function setupControls(){
  const tokenInput=$("paper-api-token");
  if(tokenInput){tokenInput.value=sessionStorage.getItem("apexPaperToken")||"";tokenInput.addEventListener("change",()=>{sessionStorage.setItem("apexPaperToken",tokenInput.value.trim());loadPaperEngineStatus();});}
  const tf=$("timeframe");tf.addEventListener("change",()=>{selectedTimeframe=tf.value;text("signal-timeframe",labels[selectedTimeframe].toUpperCase());refresh().catch(e=>setStatus(e.message));});
- $("run-backtest").addEventListener("click",runBacktest);
+ $("run-backtest").addEventListener("click",runBacktest);\n const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);\n const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
  $("stop-monitor").addEventListener("click",()=>{monitorStopped=true;monitorPaused=false;if(refreshTimer)clearInterval(refreshTimer);$("stop-monitor").textContent="■ Monitoring Stopped";$("pause-monitor").disabled=true;setStatus("MONITORING STOPPED");});
  $("view-report").addEventListener("click",()=>{location.hash="backtest-panel";runBacktest();});
