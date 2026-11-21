@@ -68,7 +68,7 @@ def test_stage5_validation_flags_open_btc_position(monkeypatch):
     assert checks["no_open_btc_positions"] is False
 
 
-def test_stage6_readiness_is_hard_locked_and_never_enables_live_trading():
+def test_stage6_readiness_reports_gates_and_remains_hard_locked():
     with TestClient(main.app) as client:
         response = client.get("/api/live/readiness")
 
@@ -76,10 +76,37 @@ def test_stage6_readiness_is_hard_locked_and_never_enables_live_trading():
     report = response.json()
     assert report["stage"] == 6
     assert report["result"] == "NOT_READY"
+    assert report["mode"] == "READINESS_ASSESSMENT_ONLY"
     assert report["live_trading_supported"] is False
     assert report["live_orders_enabled"] is False
-    assert report["gates_passed"] == 0
+    assert report["readiness_percent"] == 14
+    assert report["gates_passed"] == 1
+    assert report["gates_total"] == 7
+    assert report["paper_auto_entry_enabled"] is False
+    assert report["paper_exit_manager_armed"] is False
+    assert report["broker_api_called"] is False
     assert report["order_submitted"] is False
+    assert len(report["next_actions"]) == 5
+    gates = {item["gate"]: item["passed"] for item in report["gates"]}
+    assert gates["paper_execution_controls_safe"] is True
+    assert all(not passed for key, passed in gates.items() if key != "paper_execution_controls_safe")
+
+
+def test_stage6_blocks_when_paper_execution_controls_are_not_safe(monkeypatch):
+    monkeypatch.setitem(main._auto_entry, "enabled", True)
+    monkeypatch.setitem(main._exit_manager, "armed", False)
+    with TestClient(main.app) as client:
+        response = client.get("/api/live/readiness")
+
+    assert response.status_code == 200
+    report = response.json()
+    gates = {item["gate"]: item for item in report["gates"]}
+    assert gates["paper_execution_controls_safe"]["passed"] is False
+    assert report["result"] == "NOT_READY"
+    assert report["live_orders_enabled"] is False
+    assert report["broker_api_called"] is False
+    assert report["order_submitted"] is False
+    monkeypatch.setitem(main._auto_entry, "enabled", False)
 
 
 def test_stage5_validation_requires_token(monkeypatch):
