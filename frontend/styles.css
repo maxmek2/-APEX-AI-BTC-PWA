@@ -336,3 +336,36 @@
   .cloud-status { max-width:145px; }
   .brand-name { font-size:15px; }
 }
+
+
+/* v21: final portrait polish for positions and bottom summaries */
+@media (max-width: 600px) {
+  .main-grid { grid-template-columns:minmax(0, 35%) minmax(0, 65%); gap:8px; }
+  .side-column, .content-column { align-content:start; }
+  .chart { height:clamp(245px, 62vw, 315px); }
+  #positions-panel { min-height:0; }
+  #positions-list { min-height:76px; padding:12px 0 5px; }
+  .positions-panel .between { align-items:center; }
+  .position-row { flex-wrap:wrap; }
+  .position-right { min-width:74px; }
+  .lower-grid { grid-template-columns:minmax(0, .95fr) minmax(0, 1.05fr); align-items:stretch; gap:8px; }
+  .progress-panel h2, .summary-panel h2 { font-size:13px; margin-bottom:9px; }
+  .progress-content { align-items:center; gap:7px; }
+  .progress-ring { width:54px; height:54px; flex:0 0 54px; border-width:5px; }
+  .progress-content > div:last-child { min-width:0; }
+  .progress-content > div:last-child b { font-size:10px; }
+  .progress-content p, .summary-panel p { font-size:8px; line-height:1.4; }
+  .summary-cells { grid-template-columns:repeat(4,minmax(0,1fr)); gap:2px; }
+  .summary-cells>div { min-width:0; padding:4px 2px; border:0; border-right:1px solid var(--line); gap:5px; }
+  .summary-cells>div:last-child { border:0; }
+  .summary-cells small { font-size:7px; white-space:nowrap; }
+  .summary-cells b { font-size:10px; overflow-wrap:anywhere; }
+  .action-bar { margin-top:2px; }
+}
+@media (max-width: 390px) {
+  .main-grid { grid-template-columns:minmax(0, 35%) minmax(0, 65%); }
+  .chart { height:245px; }
+  .progress-ring { width:48px; height:48px; flex-basis:48px; }
+  .summary-cells small { font-size:6px; }
+  .summary-cells b { font-size:9px; }
+}
