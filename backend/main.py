@@ -384,7 +384,7 @@ async def paper_trade_preview(request: PaperPreviewRequest):
     if equity <= 0:
         raise HTTPException(409, "Paper account equity is unavailable")
     positions_data = await get_json(f"{PAPER_API_ORIGIN}/v2/positions")
-    if any(p.get("symbol") == "BTCUSD" for p in positions_data):
+    if any(str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD" for p in positions_data):
         raise HTTPException(409, "An existing BTC position is open; no additional entry preview")
     signal_data = await signal(request.timeframe)
     if signal_data.get("signal") != "LONG_SETUP":
