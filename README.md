@@ -87,10 +87,10 @@ Entry execution remains disabled. The exit manager can submit a market close for
 
 ## Remaining Stage 4 verification gates
 
-- Persistent state and deterministic restart recovery are not yet implemented. Current Auto Entry and Exit Manager state remains in process memory; after restart, inspect the broker account and open orders manually.
+- Runtime controller context is now snapshotted to SQLite every five seconds. Configure a Render persistent disk mounted at `/var/data`; without it, the database may be lost on redeploy/restart. Every restart still forces Auto Entry OFF and Exit Manager DISARMED. Broker positions and open orders must be reconciled manually.
 - Partial-fill handling is fail-closed when an open BTC order is detected alongside a position; automated cancel/replace and complete order lifecycle reconciliation are not implemented.
 - Exit Manager now rejects stale/future latest-trade timestamps and checks whether the position remains after a close request. A remaining position is flagged for inspection; it is not automatically retried.
-- Automated tests cover deterministic exit decisions and API token access only. They do not simulate Alpaca fills, rejections, partial closes, network timeouts, Render restarts, or actual deployed behavior.
+- Automated tests now cover deterministic exit decisions, API token access, and SQLite state restoration with execution forced off. They still do not simulate Alpaca fills, rejections, partial closes, network timeouts, or actual deployed behavior.
 - No order was submitted by these code changes. Paper execution remains unverified and must stay disabled.
 
 
