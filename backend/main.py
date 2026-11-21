@@ -423,3 +423,168 @@ async def paper_trade_preview(request: PaperPreviewRequest):
         "execution_status": "PREVIEW_ONLY",
         "warning": "Reference prices can move. Alpaca crypto does not support bracket/OCO exits in this integration, so no order can be submitted safely."
     }
+
+
+# Server-side protective exit manager.
+# It is PAPER-only, starts DISARMED, and only manages an already-open BTC long.
+# It never opens positions. Arming is an explicit API action after deployment.
+import asyncio
+
+_exit_manager = {
+    "armed": False,
+    "position_key": None,
+    "entry_price": None,
+    "stop_price": None,
+    "target_price": None,
+    "last_price": None,
+    "last_check": None,
+    "last_event": "DISARMED",
+    "close_order_id": None,
+}
+_exit_task = None
+_exit_lock = asyncio.Lock()
+
+async def _paper_request(method: str, path: str, params: dict | None = None):
+    if not _paper_only_configured():
+        raise HTTPException(403, "Paper host verification failed")
+    async with httpx.AsyncClient(timeout=12) as client:
+        response = await client.request(
+            method, f"{PAPER_API_ORIGIN}{path}",
+            headers=HEADERS, params=params
+        )
+        if response.status_code >= 400:
+            raise HTTPException(502, f"Alpaca paper API returned {response.status_code}")
+        return response.json() if response.content else {}
+
+async def _exit_manager_tick():
+    if not _exit_manager["armed"] or not _paper_only_configured():
+        return
+    async with _exit_lock:
+        positions = await _paper_request("GET", "/v2/positions")
+        btc = next((p for p in positions
+                    if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
+        if not btc:
+            _exit_manager.update({
+                "position_key": None, "entry_price": None,
+                "stop_price": None, "target_price": None,
+                "last_event": "NO_OPEN_BTC_POSITION"
+            })
+            return
+
+        qty = float(btc.get("qty") or 0)
+        entry = float(btc.get("avg_entry_price") or 0)
+        if qty <= 0 or entry <= 0:
+            _exit_manager["last_event"] = "INVALID_POSITION_DATA"
+            return
+
+        position_key = f'{btc.get("symbol")}:{btc.get("qty")}:{btc.get("avg_entry_price")}'
+        if _exit_manager["position_key"] != position_key:
+            bars_data = await get_json(
+                f"{DATA}/v1beta3/crypto/us/bars",
+                {"symbols": "BTC/USD", "timeframe": "5Min", "limit": 100, "sort": "desc"}
+            )
+            bars = list(reversed(bars_data.get("bars", {}).get("BTC/USD", [])))
+            volatility = atr(bars, 14)
+            if not volatility or volatility <= 0:
+                _exit_manager["last_event"] = "WAITING_FOR_VALID_ATR"
+                return
+            distance = volatility * 1.5
+            _exit_manager.update({
+                "position_key": position_key,
+                "entry_price": entry,
+                "stop_price": round(entry - distance, 2),
+                "target_price": round(entry + distance * 2.0, 2),
+                "last_event": "PROTECTIVE_LEVELS_INITIALIZED"
+            })
+
+        trade = await get_json(
+            f"{DATA}/v1beta3/crypto/us/latest/trades",
+            {"symbols": "BTC/USD"}
+        )
+        latest = trade.get("trades", {}).get("BTC/USD")
+        price = float(latest.get("p")) if latest and latest.get("p") is not None else 0
+        _exit_manager["last_price"] = price or None
+        _exit_manager["last_check"] = datetime.now(timezone.utc).isoformat()
+        if price <= 0:
+            _exit_manager["last_event"] = "WAITING_FOR_VALID_MARKET_PRICE"
+            return
+
+        reason = None
+        if price <= float(_exit_manager["stop_price"]):
+            reason = "STOP_LOSS_TRIGGERED"
+        elif price >= float(_exit_manager["target_price"]):
+            reason = "TAKE_PROFIT_TRIGGERED"
+
+        if reason:
+            _exit_manager["last_event"] = reason + "_CLOSING_POSITION"
+            result = await _paper_request("DELETE", "/v2/positions/BTCUSD")
+            _exit_manager["close_order_id"] = result.get("id")
+            _exit_manager["last_event"] = reason + "_CLOSE_ORDER_SUBMITTED"
+            # Disarm after one close attempt; user must inspect the order/fill.
+            _exit_manager["armed"] = False
+
+async def _exit_manager_loop():
+    while True:
+        try:
+            await _exit_manager_tick()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _exit_manager["last_event"] = "ERROR: " + str(exc)[:180]
+        await asyncio.sleep(5)
+
+@app.on_event("startup")
+async def start_exit_manager():
+    global _exit_task
+    _exit_task = asyncio.create_task(_exit_manager_loop())
+
+@app.on_event("shutdown")
+async def stop_exit_manager():
+    global _exit_task
+    if _exit_task:
+        _exit_task.cancel()
+        try:
+            await _exit_task
+        except asyncio.CancelledError:
+            pass
+        _exit_task = None
+
+@app.get("/api/paper/exit-manager")
+async def paper_exit_manager_status():
+    return {
+        "mode": "paper" if _paper_only_configured() else "blocked",
+        "symbol": "BTC/USD",
+        "armed": _exit_manager["armed"],
+        "opens_positions": False,
+        "poll_interval_seconds": 5,
+        "stop_price": _exit_manager["stop_price"],
+        "take_profit_price": _exit_manager["target_price"],
+        "last_price": _exit_manager["last_price"],
+        "last_check": _exit_manager["last_check"],
+        "last_event": _exit_manager["last_event"],
+        "close_order_id": _exit_manager["close_order_id"],
+        "warning": "Server polling is not a guaranteed exchange-native stop. It depends on Render uptime, network access and market data; gaps/slippage are possible."
+    }
+
+@app.post("/api/paper/exit-manager/arm")
+async def arm_paper_exit_manager():
+    if not _paper_only_configured():
+        raise HTTPException(403, "Only the exact Alpaca Paper API host is allowed")
+    positions = await _paper_request("GET", "/v2/positions")
+    btc = next((p for p in positions
+                if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
+    if not btc:
+        raise HTTPException(409, "No open BTC paper position to protect")
+    _exit_manager.update({
+        "armed": True, "position_key": None,
+        "entry_price": None, "stop_price": None, "target_price": None,
+        "last_event": "ARMED_WAITING_FOR_PROTECTIVE_LEVELS",
+        "close_order_id": None
+    })
+    return await paper_exit_manager_status()
+
+@app.post("/api/paper/exit-manager/disarm")
+async def disarm_paper_exit_manager():
+    _exit_manager["armed"] = False
+    _exit_manager["last_event"] = "DISARMED_BY_USER"
+    return await paper_exit_manager_status()
