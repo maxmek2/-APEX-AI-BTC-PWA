@@ -498,3 +498,32 @@ h2,h3{letter-spacing:.015em}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+
+/* v29 — collapsible Research Lab tab */
+.research-drawer{
+  border:1px solid rgba(72,130,190,.34);
+  border-radius:16px;
+  background:linear-gradient(145deg,rgba(13,27,45,.98),rgba(7,16,29,.98));
+  box-shadow:0 12px 28px rgba(0,0,0,.16);
+  overflow:hidden;
+}
+.research-drawer>summary{
+  list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+  gap:12px;padding:17px 19px;color:var(--text);
+}
+.research-drawer>summary::-webkit-details-marker{display:none}
+.research-drawer>summary>span:first-child{display:grid;gap:5px}
+.research-drawer>summary strong{font-size:16px;letter-spacing:.02em}
+.research-drawer>summary small{font-size:11px;color:var(--muted)}
+.drawer-action{font-size:11px;color:#8ec5ff;white-space:nowrap}
+.research-drawer[open]>summary{border-bottom:1px solid var(--line);background:rgba(33,74,118,.16)}
+.research-content{display:grid;gap:12px;padding:12px}
+.research-content>.panel{margin:0}
+@media(max-width:600px){
+ .research-drawer>summary{padding:13px 12px}
+ .research-drawer>summary strong{font-size:14px}
+ .research-drawer>summary small{font-size:9px;line-height:1.4}
+ .drawer-action{font-size:9px}
+ .research-content{padding:8px;gap:9px}
+}
