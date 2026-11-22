@@ -40,7 +40,8 @@ def test_stage56_is_training_only_and_never_uses_holdout():
     assert report["order_submitted"] is False
     assert report["alpaca_write_api_called"] is False
     assert report["automated_execution"] is False
-    assert report["training"]["training_bars"] if "training_bars" in report["training"] else report["training_bars"]==3600
+    assert report["training_bars"]==3600
+    assert report["training"]["metrics"]["trades"]>=0
 
 
 def test_stage56_rejects_short_history():
