@@ -636,3 +636,8 @@ h2,h3{letter-spacing:.015em}
 .action-bar{grid-template-columns:repeat(4,minmax(0,1fr))}
 #disable-auto-entry-bar{border-color:#92505e;background:#321e27;color:#ffd4db}
 @media(max-width:600px){.action-bar{grid-template-columns:repeat(2,minmax(0,1fr))}.action-bar button{min-height:40px}}
+
+/* v33: add visual keys for EMA 50 and RSI 14 */
+.ema-purple{background:#bd83ff}.rsi-key{background:#e5a1ff}
+@media(max-width:760px){.chart{height:270px}}
+@media(max-width:390px){.chart{height:230px}}
