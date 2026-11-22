@@ -108,13 +108,32 @@ async function runStage53(){
 }
 
 
+
+async function runStage55(){
+ const out=$("stage55-result"),btn=$("run-stage55");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Fetching up to 30,000 BTC/USD M5 candles and auditing data integrity and simulated costs…";
+ try{
+  const data=await get("/research/stage5-5/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  const audit=data.data_audit||{},checks=audit.checks||{},g=data.audit_gates||{};
+  const checkRows=Object.entries(checks).map(([name,pass])=>'<div class="check-row"><span>'+escapeLedger(name.replaceAll("_"," "))+'</span><strong class="'+(pass?"check-pass":"check-fail")+'">'+(pass?"PASS":"FAIL")+'</strong></div>').join("");
+  const gateRows=Object.entries(g).map(([name,pass])=>'<div class="check-row"><span>'+escapeLedger(name.replaceAll("_"," "))+'</span><strong class="'+(pass?"check-pass":"check-fail")+'">'+(pass?"PASS":"FAIL")+'</strong></div>').join("");
+  const dataGrid='<div class="backtest-grid">'+ledgerMetric("Bars received",audit.bars_received??data.bars_used)+ledgerMetric("Unique timestamps",audit.unique_timestamp_count??"—")+ledgerMetric("5m coverage",String(audit.observed_5m_coverage_percent??0)+"%")+ledgerMetric("Missing 5m intervals",audit.estimated_missing_5m_intervals??0)+ledgerMetric("Largest gap",String(audit.largest_gap_minutes??0)+" min")+ledgerMetric("Duplicate timestamps",audit.duplicate_timestamps??0)+ledgerMetric("Invalid OHLC",audit.invalid_ohlc_bars??0)+ledgerMetric("Invalid volume",audit.invalid_volume_bars??0)+'</div>';
+  const costs=(label,part)=>{const m=part?.metrics||{},c=part?.cost_reconciliation||{};return '<h4>'+label+'</h4><div class="backtest-grid">'+ledgerMetric("Trades",m.trades??0)+ledgerMetric("Gross P&L",money(m.gross_pnl_usd),Number(m.gross_pnl_usd)>0)+ledgerMetric("Fees",money(c.estimated_fees_usd))+ledgerMetric("Slippage",money(c.estimated_slippage_usd))+ledgerMetric("Net P&L",money(m.net_pnl_usd),Number(m.net_pnl_usd)>0)+ledgerMetric("Cost reconciliation",c.reconciliation_passed?"PASS":"FAIL",!!c.reconciliation_passed)+'</div><small class="muted">'+escapeLedger(c.slippage_treatment||"")+'</small>';};
+  const ledger=(label,part)=>{const rows=(part?.trade_ledger||[]).map(t=>'<tr><td>'+ledgerTime(t.entry_time)+'</td><td>'+ledgerTime(t.exit_time)+'</td><td>'+money(t.gross_pnl_usd)+'</td><td>'+money(t.estimated_fees_usd)+'</td><td>'+money(t.estimated_slippage_usd)+'</td><td>'+money(t.net_pnl_usd)+'</td></tr>').join("");return '<h4>'+label+' · latest '+(part?.trade_ledger||[]).length+' trades</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Gross</th><th>Fees</th><th>Slippage</th><th>Net</th></tr></thead><tbody>'+rows+'</tbody></table></div>';};
+  const title='<strong class="'+(data.status==="AUDIT_PASS_RESEARCH_ONLY"?"check-pass":"check-fail")+'">'+escapeLedger(data.status)+'</strong><p>BTC/USD · '+escapeLedger(data.bars_used)+'/'+escapeLedger(data.requested_bars)+' bars · '+escapeLedger(data.data_pages_fetched)+' data pages</p><small class="muted">'+ledgerTime(data.period?.from)+' → '+ledgerTime(data.period?.to)+' · Full requested history: '+(data.history_complete_for_request?"YES":"NO")+'</small>';
+  out.innerHTML=title+'<h4>Historical data integrity</h4>'+dataGrid+checkRows+'<h4>Audit gates</h4>'+gateRows+costs("Training cost audit",data.training)+ledger("Training ledger",data.training)+costs("Untouched holdout cost audit",data.holdout)+ledger("Holdout ledger",data.holdout)+'<small class="muted">A Stage 5.5 audit pass validates data structure and accounting arithmetic only. It does not mean the strategy is profitable or ready for automation. Costs are estimates, not broker fills. Slippage is embedded in simulated execution prices and gross P&L; it is not deducted twice. No account/order/position APIs called; no orders submitted; Auto Entry remains OFF.</small>';
+ }catch(e){out.textContent="Stage 5.5 audit unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage54(){
  const out=$("stage54-result"),btn=$("run-stage54");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Fetching BTC/USD history and evaluating fixed-strategy chronological regime/fold robustness…";
  try{
   const data=await get("/research/stage5-4/run?timeframe=5Min&limit=10000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&folds=4&minimum_trades_per_fold=10&max_drawdown_percent=5");
   if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / 5000 minimum candles.";return;}
-  const metrics=(label,m)=>'<h4>'+label+'</h4><div class="backtest-grid">'+ledgerMetric("Trades",m?.trades??0)+ledgerMetric("Net P&L",money(m?.net_pnl_usd),Number(m?.net_pnl_usd)>0)+ledgerMetric("Net PF",m?.net_profit_factor??"—")+ledgerMetric("Win rate",String(m?.win_rate_percent??0)+"%")+ledgerMetric("Closed-trade max DD",String(m?.max_closed_trade_drawdown_percent??m?.max_drawdown_percent??0)+"%")+ledgerMetric("Fees",money(m?.fees_usd))+'</div>';
+  const metrics=(label,m)=>'<h4>'+label+'</h4><div class="backtest-grid">'+ledgerMetric("Trades",m?.trades??0)+ledgerMetric("Net P&L",money(m?.net_pnl_usd),Number(m?.net_pnl_usd)>0)+ledgerMetric("Net PF",m?.net_profit_factor??"—")+ledgerMetric("Win rate",String(m?.win_rate_percent??0)+"%")+ledgerMetric("Closed-trade max DD",String(m?.max_closed_trade_drawdown_percent??m?.max_drawdown_percent??0)+"%")+ledgerMetric("Fees",money(m?.fees_usd??m?.estimated_fees_usd))+'</div>';
   const regimeTable=(items)=>{const rows=Object.entries(items||{}).map(([name,m])=>'<tr><td>'+escapeLedger(name)+'</td><td>'+escapeLedger(m.trades)+'</td><td>'+escapeLedger(m.win_rate_percent)+'%</td><td>'+money(m.net_pnl_usd)+'</td><td>'+escapeLedger(m.net_profit_factor??"—")+'</td></tr>').join("");return '<div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Regime</th><th>Trades</th><th>Win rate</th><th>Net P&amp;L</th><th>Net PF</th></tr></thead><tbody>'+rows+'</tbody></table></div>';};
   const folds=(data.walk_forward_folds||[]).map(f=>'<tr><td>'+escapeLedger(f.fold)+'</td><td>'+ledgerTime(f.from)+'</td><td>'+ledgerTime(f.to)+'</td><td>'+escapeLedger(f.metrics.trades)+'</td><td>'+money(f.metrics.net_pnl_usd)+'</td><td>'+escapeLedger(f.metrics.net_profit_factor??"—")+'</td><td>'+escapeLedger(f.metrics.max_closed_trade_drawdown_percent)+'%</td><td class="'+(f.entries_after_fold_start?"check-pass":"check-fail")+'">'+(f.entries_after_fold_start?"PASS":"FAIL")+'</td></tr>').join("");
   const g=data.decision_gates||{},fs=data.fold_summary||{};
@@ -158,6 +177,7 @@ function setupControls(){
  const s51=$("run-stage51");if(s51)s51.addEventListener("click",runStage51Ledger);
  const s53=$("run-stage53");if(s53)s53.addEventListener("click",runStage53);
  const s54=$("run-stage54");if(s54)s54.addEventListener("click",runStage54);
+ const s55=$("run-stage55");if(s55)s55.addEventListener("click",runStage55);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
