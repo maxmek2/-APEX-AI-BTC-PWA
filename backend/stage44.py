@@ -11,9 +11,12 @@ except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import aggregate_complete_5m, atr_values, ema_values, run_breakout_backtest, _stamp
 
 
-def build_stage44_signals(bars: list[dict], lookback: int = 20) -> dict:
-    if lookback < 2:
-        raise ValueError("lookback must be >= 2")
+def build_stage44_signals(bars: list[dict], lookback: int = 20,
+                          relative_volume_threshold: float = 1.5,
+                          pullback_atr: float = 0.25,
+                          pullback_bars: int = 4) -> dict:
+    if lookback < 2 or relative_volume_threshold <= 0 or pullback_atr < 0 or pullback_bars < 1:
+        raise ValueError("Invalid Stage 4.4 signal parameters")
     m15 = aggregate_complete_5m(bars, 15)
     h1 = aggregate_complete_5m(bars, 60)
     atrs = atr_values(m15, 14)
@@ -35,7 +38,7 @@ def build_stage44_signals(bars: list[dict], lookback: int = 20) -> dict:
     diag = {"complete_15m_bars": len(m15), "complete_1h_bars": len(h1),
             "breakout_events": 0, "volume_ratio_pass": 0, "pullback_confirmations": 0,
             "hourly_ema20_50_valid": 0, "hourly_ema20_50_bullish": 0,
-            "hourly_ema50_200_valid": 0, "hourly_ema50_200_bullish": 0,
+            "hourly_ema50_200_valid": 0, "hourly_ema50_200_bullish": 0,\n            "relative_volume_threshold": relative_volume_threshold,\n            "pullback_atr": pullback_atr, "pullback_bars": pullback_bars,
             "breakouts_with_valid_1h": 0, "breakouts_with_bullish_1h20_50": 0,
             "breakouts_with_bullish_1h50_200": 0}
     pending = []
@@ -57,17 +60,17 @@ def build_stage44_signals(bars: list[dict], lookback: int = 20) -> dict:
         atr_base[i] = atr
         if breakout:
             diag["breakout_events"] += 1
-            if ratio is not None and ratio >= 1.5:
+            if ratio is not None and ratio >= relative_volume_threshold:
                 diag["volume_ratio_pass"] += 1
                 masks["breakout_relvol_1p5"][i] = True
-            pending.append({"level": ceiling, "atr": atr, "expires": p + 4, "ratio": ratio})
+            pending.append({"level": ceiling, "atr": atr, "expires": p + pullback_bars, "ratio": ratio})
         # A pullback must happen after a prior breakout, touch near its level,
         # then close back above that level. No same-candle breakout entry.
         survivors = []
         for setup in pending:
             if p > setup["expires"]:
                 continue
-            touched = cur["l"] <= setup["level"] + 0.25 * setup["atr"]
+            touched = cur["l"] <= setup["level"] + pullback_atr * setup["atr"]
             reclaimed = cur["c"] >= setup["level"]
             if p > setup.get("origin", p) and touched and reclaimed:
                 diag["pullback_confirmations"] += 1
@@ -112,7 +115,7 @@ def run_stage44_report(bars: list[dict], train_fraction: float = 0.60,
     first_fill = bars[split + 1].get("t")
     reports = {}
     for name, mask in masks.items():
-        train = run_breakout_backtest(bars[:split+1], mask[:split+1], atrs[:split+1],
+        train = run_breakout_backtest(bars[:split], mask[:split], atrs[:split],
                                       starting_equity, notional_usd, fee_rate, slippage_bps)
         costs = []
         for bps in sorted({0, 5, 10, 20, slippage_bps}):
@@ -125,7 +128,7 @@ def run_stage44_report(bars: list[dict], train_fraction: float = 0.60,
         reports[name] = {"training_metrics": train["metrics"], "holdout_metrics": selected["metrics"],
                          "holdout_entries_after_split": selected["entries_after_split"],
                          "cost_sensitivity": costs,
-                         "training_signal_count": sum(mask[:split+1]),
+                         "training_signal_count": sum(mask[:split]),
                          "holdout_signal_count": sum(mask[split:])}
     return {"reports": reports, "diagnostics": built["diagnostics"],
             "split_index": split, "first_possible_holdout_fill": first_fill}
