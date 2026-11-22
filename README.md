@@ -183,3 +183,14 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - The endpoint reports each window separately and explicitly returns `RESEARCH_ONLY_NOT_CERTIFIED`. Positive windows do not prove future profitability or complete Stage 4.
 - The route is read-only. It makes historical market-data reads only and never submits orders or calls an Alpaca write endpoint.
 - This is an additional diagnostic, not a replacement for controlled Paper lifecycle tests, realistic fee verification, intrabar data, or independent review.
+
+
+## Stage 4.1 — Training-only parameter search and cost sensitivity
+
+- `GET /api/backtest/optimize?timeframe=5Min&limit=1000` evaluates a small, fixed 18-configuration grid (EMA 9/21, 12/26, 20/50; ATR stop 1.5x/2.0x; reward/risk 1.5/2.0/2.5).
+- Parameter selection uses training-period net PnL only. The later chronological holdout is evaluated once using the selected parameters and is never used to rank or select candidates.
+- The selected configuration is stress-tested on the untouched holdout at 0, 5, 10 and 20 bps adverse slippage per side; fee assumptions remain explicit.
+- The endpoint reports all training candidates, selected training metrics, untouched holdout metrics, boundary checks, and limitations. It returns `RESEARCH_ONLY_NOT_CERTIFIED`.
+- The candidate grid is intentionally small, but training selection can still overfit. The holdout is not independent future validation and cannot certify profitability.
+- Drawdown in the underlying backtest is closed-trade drawdown; intratrade mark-to-market drawdown is not yet modelled.
+- The endpoint is read-only: historical data GET requests only, no Paper or live order submissions.
