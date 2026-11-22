@@ -1394,11 +1394,17 @@ async def _exit_manager_tick():
         btc = next((p for p in positions
                     if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
         if not btc:
+            was_closing = bool(_exit_manager.get("close_reason"))
+            close_reason = _exit_manager.get("close_reason")
             _exit_manager.update({
-                "position_key": None, "entry_price": None,
-                "stop_price": None, "target_price": None,
-                "last_event": "NO_OPEN_BTC_POSITION"
+                "armed": False, "position_key": None, "entry_price": None,
+                "stop_price": None, "target_price": None, "close_order_id": None,
+                "close_reason": None,
+                "last_event": (str(close_reason) + "_POSITION_CLOSED_CONFIRMED") if was_closing else "NO_OPEN_BTC_POSITION"
             })
+            if was_closing:
+                _auto_entry["enabled"] = False
+                _auto_entry["last_event"] = "AUTO_DISABLED_AFTER_POSITION_EXIT"
             return
 
         qty = float(btc.get("qty") or 0)
