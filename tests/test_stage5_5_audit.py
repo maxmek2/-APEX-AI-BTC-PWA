@@ -50,3 +50,13 @@ def test_stage55_reconciles_costs_without_double_counting_slippage():
     assert result["reconciliation_passed"] is True
     assert result["net_equals_gross_minus_fees"] is True
     assert result["estimated_slippage_usd"] == 0.04
+
+
+def test_stage55_rejects_timestamps_off_the_utc_five_minute_grid():
+    data=sample_bars()
+    for bar in data:
+        stamp=datetime.fromisoformat(bar["t"].replace("Z","+00:00"))+timedelta(minutes=1)
+        bar["t"]=stamp.isoformat().replace("+00:00","Z")
+    report=audit_bar_integrity(data)
+    assert report["off_grid_timestamps"] == len(data)
+    assert report["structural_integrity_passed"] is False
