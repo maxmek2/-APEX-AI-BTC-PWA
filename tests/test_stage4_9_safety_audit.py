@@ -27,9 +27,9 @@ def test_stage49_audit_is_read_only_and_reports_safe_defaults(monkeypatch):
 
 def test_stage49_audit_flags_enabled_paper_control(monkeypatch):
     monkeypatch.setattr(main, "_paper_only_configured", lambda: True)
-    monkeypatch.setitem(main._auto_entry, "enabled", True)
     monkeypatch.setitem(main._exit_manager, "armed", False)
     with TestClient(main.app) as client:
+        monkeypatch.setitem(main._auto_entry, "enabled", True)
         report = client.get("/api/research/safety-audit").json()
     assert report["result"] == "REQUIRES_REVIEW"
     assert report["paper_auto_entry_enabled"] is True
