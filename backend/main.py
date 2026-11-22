@@ -15,6 +15,7 @@ try:
     from .stage47 import run_stage47_report
     from .stage48 import run_stage48_report
     from .stage53 import run_stage53_report
+    from .stage54 import run_stage54_report
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
     from stage44 import run_stage44_report, build_stage44_signals
@@ -23,6 +24,7 @@ except ImportError:  # uvicorn main:app with backend as app-dir
     from stage47 import run_stage47_report
     from stage48 import run_stage48_report
     from stage53 import run_stage53_report
+    from stage54 import run_stage54_report
 
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
@@ -2550,6 +2552,45 @@ async def stage53_strategy_diagnostics(
         "data_pages_fetched": data_pages,
         "period": {"from": bars[0].get("t"), "to": bars[-1].get("t")},
         "market_data_api_read": True,
+    })
+    return report
+
+@app.get("/api/research/stage5-4/run")
+async def stage54_regime_robustness(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(10000, ge=5000, le=30000),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+    folds: int = Query(4, ge=3, le=6),
+    minimum_trades_per_fold: int = Query(10, ge=3, le=100),
+    max_drawdown_percent: float = Query(5.0, gt=0, le=50),
+):
+    """Read-only Stage 5.4 fixed-strategy regime and sequential fold report."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 5000:
+        return {
+            "stage": "5.4", "status": "INSUFFICIENT_DATA",
+            "bars_used": len(bars), "minimum_bars": 5000,
+            "market_data_api_read": True, "order_submitted": False,
+            "alpaca_write_api_called": False, "automated_execution": False,
+        }
+    try:
+        report = run_stage54_report(
+            bars, starting_equity=starting_equity,
+            notional_usd=notional_usd, fee_rate=fee_rate,
+            slippage_bps=slippage_bps, folds=folds,
+            minimum_trades_per_fold=minimum_trades_per_fold,
+            max_drawdown_percent=max_drawdown_percent,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    report.update({
+        "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data,
+        "data_pages_fetched": data_pages,
     })
     return report
 
