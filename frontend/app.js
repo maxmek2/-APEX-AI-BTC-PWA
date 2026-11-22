@@ -14,20 +14,35 @@ function ema(values,p){if(values.length<p)return values.map(()=>null);const out=
 function atr(bars,p=14){if(bars.length<=p)return null;const trs=[];for(let i=1;i<bars.length;i++){const b=bars[i],prev=bars[i-1].c;trs.push(Math.max(b.h-b.l,Math.abs(b.h-prev),Math.abs(b.l-prev)));}let v=trs.slice(0,p).reduce((a,b)=>a+b,0)/p;for(let i=p;i<trs.length;i++)v=(v*(p-1)+trs[i])/p;return v;}
 function validBars(raw){return(raw||[]).map(b=>({t:b.t,o:num(b.o),h:num(b.h),l:num(b.l),c:num(b.c),v:num(b.v)||0})).filter(b=>[b.o,b.h,b.l,b.c].every(Number.isFinite)).sort((a,b)=>Date.parse(a.t)-Date.parse(b.t));}
 function calcSignal(bars){if(bars.length<30)return null;const closes=bars.map(b=>b.c),e9=ema(closes,9).at(-1),e21=ema(closes,21).at(-1),last=closes.at(-1),vol=atr(bars);let signal="WAIT";if(e9>e21&&last>e9)signal="LONG_SETUP";else if(e9<e21&&last<e9)signal="SHORT_SETUP";return{signal,ema_9:e9,ema_21:e21,last_close:last,atr_14:vol,last_bar_time:bars.at(-1).t};}
+function rsi(values,p=14){
+ if(values.length<=p)return values.map(()=>null);
+ const out=Array(values.length).fill(null);let gain=0,loss=0;
+ for(let i=1;i<=p;i++){const d=values[i]-values[i-1];gain+=Math.max(d,0);loss+=Math.max(-d,0);}
+ let avgGain=gain/p,avgLoss=loss/p;
+ const value=()=>avgLoss===0?(avgGain===0?50:100):100-(100/(1+avgGain/avgLoss));
+ out[p]=value();
+ for(let i=p+1;i<values.length;i++){const d=values[i]-values[i-1];avgGain=(avgGain*(p-1)+Math.max(d,0))/p;avgLoss=(avgLoss*(p-1)+Math.max(-d,0))/p;out[i]=value();}
+ return out;
+}
 function renderChart(bars){
  const svg=$("price-chart");if(!svg)return;if(!bars.length){svg.innerHTML="";text("chart-meta","No valid OHLC candles");return;}
- const closes=bars.map(b=>b.c),e9=ema(closes,9),e21=ema(closes,21),vol=atr(bars),left=34,right=875,top=44,bottom=305,vTop=332,vBottom=402;
- const lo=Math.min(...bars.map(b=>b.l),...e9.filter(Number.isFinite),...e21.filter(Number.isFinite)),hi=Math.max(...bars.map(b=>b.h),...e9.filter(Number.isFinite),...e21.filter(Number.isFinite));
+ const closes=bars.map(b=>b.c),e9=ema(closes,9),e21=ema(closes,21),e50=ema(closes,50),r14=rsi(closes,14),vol=atr(bars);
+ const left=34,right=875,top=44,bottom=285,vTop=305,vBottom=355,rTop=405,rBottom=515;
+ const valid=[...e9,...e21,...e50].filter(Number.isFinite),lo=Math.min(...bars.map(b=>b.l),...valid),hi=Math.max(...bars.map(b=>b.h),...valid);
  const pad=(hi-lo)*.1||1,min=lo-pad,max=hi+pad,y=v=>bottom-(v-min)/(max-min)*(bottom-top),step=(right-left)/bars.length,w=Math.max(2,Math.min(10,step*.62));
  const maxVol=Math.max(1,...bars.map(b=>b.v)),volHeight=b=>Math.max(1,(b.v/maxVol)*(vBottom-vTop));
+ const ry=v=>rBottom-(v/100)*(rBottom-rTop);
  const grid=[top,(top+bottom)/2,bottom].map(yy=>'<line x1="24" y1="'+yy+'" x2="970" y2="'+yy+'" stroke="#23374d"/><text x="980" y="'+(yy+4)+'" fill="#9bacc0" font-size="11" text-anchor="end">'+(max-(yy-top)/(bottom-top)*(max-min)).toFixed(0)+'</text>').join("");
  const candles=bars.map((b,i)=>{const x=left+step*(i+.5),col=b.c>=b.o?"#35d49a":"#ff6878",by=Math.min(y(b.o),y(b.c)),bh=Math.max(1.5,Math.abs(y(b.o)-y(b.c)));return '<g stroke="'+col+'" fill="'+col+'"><line x1="'+x+'" y1="'+y(b.h)+'" x2="'+x+'" y2="'+y(b.l)+'" stroke-width="1.3"/><rect x="'+(x-w/2)+'" y="'+by+'" width="'+w+'" height="'+bh+'" rx="0.7"/></g>';}).join("");
  const line=arr=>arr.map((v,i)=>v==null?"":(i?"L ":"M ")+(left+step*(i+.5)).toFixed(1)+" "+y(v).toFixed(1)).filter(Boolean).join(" ");
+ const rsiLine=r14.map((v,i)=>v==null?"":(i?"L ":"M ")+(left+step*(i+.5)).toFixed(1)+" "+ry(v).toFixed(1)).filter(Boolean).join(" ");
  const volumes=bars.map((b,i)=>{const x=left+step*(i+.5),col=b.c>=b.o?"#238c78":"#9b4a61";return '<rect x="'+(x-w/2)+'" y="'+(vBottom-volHeight(b))+'" width="'+w+'" height="'+volHeight(b)+'" fill="'+col+'" opacity=".8"/>';}).join("");
  let markers="";
  for(let i=1;i<bars.length;i++){if(e9[i-1]==null||e21[i-1]==null||e9[i]==null||e21[i]==null)continue;const crossUp=e9[i-1]<=e21[i-1]&&e9[i]>e21[i],crossDown=e9[i-1]>=e21[i-1]&&e9[i]<e21[i];if(crossUp||crossDown){const x=left+step*(i+.5),yy=crossUp?y(bars[i].l)+15:y(bars[i].h)-15,col=crossUp?"#20d995":"#ff6878",label=crossUp?"BUY SETUP":"SELL WATCH";markers+='<g><rect x="'+(x-29)+'" y="'+(yy-10)+'" width="58" height="17" rx="5" fill="'+col+'"/><text x="'+x+'" y="'+(yy+2)+'" text-anchor="middle" font-size="9" font-weight="700" fill="#07111c">'+label+'</text></g>';}}
- svg.innerHTML='<g>'+grid+'</g>'+volumes+candles+'<path d="'+line(e9)+'" fill="none" stroke="#f5b84d" stroke-width="2.4"/><path d="'+line(e21)+'" fill="none" stroke="#368fff" stroke-width="2.4"/>'+markers+'<g fill="#9bacc0" font-size="11"><text x="25" y="20">BTC/USD · '+(labels[selectedTimeframe]||"5m")+'</text><text x="25" y="425">TICK VOLUME · NOT EXCHANGE VOLUME</text></g>';
- text("chart-time-label",labels[selectedTimeframe]||"5m");text("chart-meta",bars.length+" candles · Last "+new Date(bars.at(-1).t).toLocaleTimeString()+" · ATR 14 "+(vol==null?"—":money(vol)));
+ const rsiGrid=[30,50,70].map(v=>'<line x1="24" y1="'+ry(v)+'" x2="970" y2="'+ry(v)+'" stroke="'+(v===50?"#42566d":"#805b47")+'" stroke-dasharray="'+(v===50?"3 5":"6 5")+'"/><text x="980" y="'+(ry(v)+4)+'" fill="#b6c4d5" font-size="11" text-anchor="end">'+v+'</text>').join("");
+ const lastRsi=r14.at(-1);
+ svg.innerHTML='<g>'+grid+'</g>'+volumes+candles+'<path d="'+line(e9)+'" fill="none" stroke="#f5b84d" stroke-width="2.2"/><path d="'+line(e21)+'" fill="none" stroke="#368fff" stroke-width="2.2"/><path d="'+line(e50)+'" fill="none" stroke="#bd83ff" stroke-width="2.2"/>'+markers+'<line x1="24" y1="382" x2="970" y2="382" stroke="#31465f"/><g fill="#9bacc0" font-size="11"><text x="25" y="20">BTC/USD · '+(labels[selectedTimeframe]||"5m")+'</text><text x="25" y="375">TICK VOLUME · NOT EXCHANGE VOLUME</text><text x="25" y="397" fill="#c5d4e5" font-weight="700">RSI 14 · '+(lastRsi==null?"—":lastRsi.toFixed(1))+'</text></g><g>'+rsiGrid+'</g><path d="'+rsiLine+'" fill="none" stroke="#e5a1ff" stroke-width="2.4"/>';
+ text("chart-time-label",labels[selectedTimeframe]||"5m");text("chart-meta",bars.length+" candles · EMA 9/21/50 · RSI 14 "+(lastRsi==null?"—":lastRsi.toFixed(1))+" · ATR 14 "+(vol==null?"—":money(vol)));
  text("atr-mini",vol==null?"—":money(vol));
 }
 function renderPositions(positions){
