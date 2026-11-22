@@ -2219,7 +2219,7 @@ async def stage47_bootstrap_research(
     }
 
 
-@app.get("/api/paper/shadow-snapshot")
+@app.get("/api/research/shadow-snapshot")
 async def paper_shadow_snapshot(
     timeframe: str = Query("5Min", pattern="^5Min$"),
     limit: int = Query(3000, ge=3000, le=10000),
