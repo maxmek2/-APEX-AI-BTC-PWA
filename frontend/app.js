@@ -126,6 +126,40 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage512(){
+ const out=$("stage512-result"),btn=$("run-stage512");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Measuring breakout quality and post-entry failure observations on training data only…";
+ try{
+  const data=await get("/research/stage5-12/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Entry quality diagnostics were not run.";return;}
+  const c=data.candidate||{},b=data.baseline||{},d=c.diagnostics||{},s=d.summary||{},bs=(b.diagnostics||{}).summary||{};
+  const grid='<div class="backtest-grid">'+
+   ledgerMetric("Training bars",data.training_bars??0)+
+   ledgerMetric("Candidate trades",s.trades??0)+
+   ledgerMetric("Feature unavailable",s.feature_unavailable_trades??0)+
+   ledgerMetric("False breakout count",s.false_breakout_count??0)+
+   ledgerMetric("False breakout share",String(s.false_breakout_share_percent??0)+"%")+
+   ledgerMetric("Negative 3-bar close move",s.negative_3bar_close_change_trades??0)+
+   ledgerMetric("Candidate net P&L",money(c.metrics?.net_pnl_usd),Number(c.metrics?.net_pnl_usd)>0)+
+   ledgerMetric("Baseline net P&L",money(b.metrics?.net_pnl_usd),Number(b.metrics?.net_pnl_usd)>0)+
+   ledgerMetric("Baseline false breakouts",bs.false_breakout_count??0)+
+   ledgerMetric("Baseline false breakout share",String(bs.false_breakout_share_percent??0)+"%")+'</div>';
+  const groupTable=(title,obj)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry quality group</th><th>Trades</th><th>Stops</th><th>False breaks</th><th>Win %</th><th>Net P&amp;L</th><th>Net PF</th></tr></thead><tbody>'+
+   Object.entries(obj||{}).map(([k,v])=>'<tr><td>'+escapeLedger(k)+'</td><td>'+escapeLedger(v.trades)+'</td><td>'+escapeLedger(v.stop_loss_trades)+'</td><td>'+escapeLedger(v.false_breakout_count)+'</td><td>'+escapeLedger(v.win_rate_percent)+'%</td><td>'+money(v.net_pnl_usd)+'</td><td>'+escapeLedger(v.net_profit_factor??"—")+'</td></tr>').join("")+
+   '</tbody></table></div>';
+  const ledger=(d.trade_ledger||[]).slice(-30).reverse().map(x=>'<tr><td>'+escapeLedger(x.entry_time)+'</td><td>'+escapeLedger(x.exit_reason)+'</td><td>'+escapeLedger(x.entry_quality_group)+'</td><td>'+escapeLedger(x.breakout_displacement_atr??"—")+'</td><td>'+escapeLedger(x.breakout_volume_ratio??"—")+'</td><td>'+escapeLedger(x.pullback_reclaim_distance_atr??"—")+'</td><td>'+escapeLedger(x.entry_candle_body_atr??"—")+'</td><td>'+escapeLedger(x.false_breakout_within_3_or_6_bars)+'</td><td>'+money(x.net_pnl_usd)+'</td></tr>').join("");
+  const findings='<h4>Findings to investigate</h4><ul>'+((data.findings||[]).map(x=>'<li>'+escapeLedger(x)+'</li>').join(""))+'</ul>';
+  out.innerHTML='<strong>'+escapeLedger(data.status)+'</strong>'+grid+
+   groupTable("Candidate · entry quality attribution",d.entry_quality_attribution)+
+   groupTable("Baseline · entry quality attribution",b.diagnostics?.entry_quality_attribution)+
+   findings+
+   '<h4>Latest candidate entry diagnostics</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Quality</th><th>Breakout ATR</th><th>Breakout vol</th><th>Reclaim ATR</th><th>Body ATR</th><th>False break</th><th>Net</th></tr></thead><tbody>'+ledger+'</tbody></table></div>'+
+   '<small class="muted">Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'. Entry features use completed pre-entry 15-minute bars. False-breakout labels use subsequent completed bars as outcome only; they do not alter entries. No optimization, broker API calls, order submission or automated execution.</small>';
+ }catch(e){out.textContent="Stage 5.12 diagnostics unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage511(){
  const out=$("stage511-result"),btn=$("run-stage511");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Inspecting stop-loss excursions and pre-entry market context on training data only…";
@@ -376,6 +410,7 @@ function setupControls(){
  const s59=$("run-stage59");if(s59)s59.addEventListener("click",runStage59);
  const s510=$("run-stage510");if(s510)s510.addEventListener("click",runStage510);
  const s511=$("run-stage511");if(s511)s511.addEventListener("click",runStage511);
+ const s512=$("run-stage512");if(s512)s512.addEventListener("click",runStage512);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
