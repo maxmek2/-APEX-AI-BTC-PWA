@@ -56,15 +56,13 @@ async def stage51_evaluate(request: ResearchRequest):
     train_pass = (
         train["trades"] >= request.minimum_trades
         and train["net_pnl_usd"] > 0
-        and isinstance(train["profit_factor"], (int, float))
-        and train["profit_factor"] > 1
+        and (train["profit_factor"] == "infinite" or (isinstance(train["profit_factor"], (int, float)) and train["profit_factor"] > 1))
     )
     holdout_pass = (
         train_pass
         and holdout["trades"] >= request.minimum_trades
         and holdout["net_pnl_usd"] > 0
-        and isinstance(holdout["profit_factor"], (int, float))
-        and holdout["profit_factor"] > 1
+        and (holdout["profit_factor"] == "infinite" or (isinstance(holdout["profit_factor"], (int, float)) and holdout["profit_factor"] > 1))
     )
     return {
         "stage": "5.1",
