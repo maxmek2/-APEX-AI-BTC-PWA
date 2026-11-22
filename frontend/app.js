@@ -126,6 +126,39 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage59(){
+ const out=$("stage59-result"),btn=$("run-stage59");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Recomputing every training trade's fills, gross P&L, fees, embedded slippage and R multiples…";
+ try{
+  const data=await get("/research/stage5-9/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Accounting audit was not run.";return;}
+  const a=data.accounting_audit||{},s=a.summary||{},m=data.reported_backtest_metrics||{};
+  const grid='<div class="backtest-grid">'+
+   ledgerMetric("Training bars",data.training_bars??0)+
+   ledgerMetric("Trades audited",s.trades_audited??0)+
+   ledgerMetric("Accounting checks",a.status||"—",a.status==="PASS")+
+   ledgerMetric("Discrepancies",a.discrepancy_count??0,Number(a.discrepancy_count)===0)+
+   ledgerMetric("Recomputed gross P&L",money(s.gross_pnl_recomputed_usd),Number(s.gross_pnl_recomputed_usd)>0)+
+   ledgerMetric("Recomputed fees",money(s.fees_recomputed_usd))+
+   ledgerMetric("Recomputed net P&L",money(s.net_pnl_recomputed_usd),Number(s.net_pnl_recomputed_usd)>0)+
+   ledgerMetric("Embedded slippage",money(s.embedded_slippage_recomputed_usd))+
+   ledgerMetric("Backtest totals match",data.aggregate_totals_match_backtest?"YES":"NO",data.aggregate_totals_match_backtest)+
+   ledgerMetric("TP trades net-negative",s.take_profit_net_negative_count??0)+
+   ledgerMetric("TP gross non-positive",s.take_profit_gross_nonpositive_count??0)+
+   ledgerMetric("Median gross R",s.gross_r_median??"—")+
+   ledgerMetric("Median net R",s.net_r_median??"—")+'</div>';
+  const issues=(a.discrepancies||[]).slice(0,25).map(x=>'<tr><td>'+escapeLedger(x.trade)+'</td><td>'+escapeLedger(x.field)+'</td><td>'+escapeLedger(x.recomputed??x.detail??"—")+'</td><td>'+escapeLedger(x.reported??"—")+'</td></tr>').join("");
+  const trades=(a.trade_ledger||[]).slice(-25).reverse().map(x=>'<tr><td>'+escapeLedger(x.entry_time)+'</td><td>'+escapeLedger(x.exit_reason)+'</td><td>'+money(x.recomputed_gross_pnl_usd)+'</td><td>'+money(x.recomputed_fees_usd)+'</td><td>'+money(x.recomputed_net_pnl_usd)+'</td><td>'+escapeLedger(x.gross_r_multiple??"—")+'</td><td>'+escapeLedger(x.net_r_multiple??"—")+'</td></tr>').join("");
+  out.innerHTML='<strong>'+escapeLedger(data.status)+' · '+escapeLedger(a.status||"AUDIT UNAVAILABLE")+'</strong>'+grid+
+   '<p>'+escapeLedger(a.interpretation||"")+'</p>'+
+   (a.discrepancies?.length?'<h4>Accounting discrepancies</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Trade</th><th>Field</th><th>Recomputed</th><th>Reported</th></tr></thead><tbody>'+issues+'</tbody></table></div>':'<p>No trade-level accounting discrepancy found within rounding tolerance.</p>')+
+   '<h4>Latest audited trades</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Gross</th><th>Fees</th><th>Net</th><th>Gross R</th><th>Net R</th></tr></thead><tbody>'+trades+'</tbody></table></div>'+
+   '<small class="muted">Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'. Slippage is already embedded in executed fills and is not deducted twice. Simulator accounting audit only; not broker-fill verification. No parameter search, broker writes, order submission or automated execution.</small>';
+ }catch(e){out.textContent="Stage 5.9 audit unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage58(){
  const out=$("stage58-result"),btn=$("run-stage58");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Fetching BTC/USD M5 history and diagnosing the fixed Stage 5.7 candidate on training data only…";
@@ -263,6 +296,7 @@ function setupControls(){
  const s56=$("run-stage56");if(s56)s56.addEventListener("click",runStage56);
  const s57=$("run-stage57");if(s57)s57.addEventListener("click",runStage57);
  const s58=$("run-stage58");if(s58)s58.addEventListener("click",runStage58);
+ const s59=$("run-stage59");if(s59)s59.addEventListener("click",runStage59);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
