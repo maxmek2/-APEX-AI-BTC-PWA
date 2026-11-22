@@ -10,9 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 try:
     from .stage43 import build_breakout_signals, run_breakout_backtest
     from .stage44 import run_stage44_report
+    from .stage45 import run_stage45_report
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
     from stage44 import run_stage44_report
+    from stage45 import run_stage45_report
 
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
@@ -2049,4 +2051,78 @@ async def live_trading_readiness():
         "broker_api_called": False,
         "order_submitted": False,
         "note": "Assessment only. This endpoint makes no broker API calls, cannot enable execution, and never submits orders."
+    }
+
+
+@app.get("/api/backtest/stage4-5")
+async def stage45_parameter_research(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(10000, ge=3000, le=10000),
+    train_fraction: float = Query(0.60, gt=0.50, lt=0.80),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+):
+    """Read-only Stage 4.5: select parameters on training data, then one holdout test."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 3000:
+        return {
+            "symbol": "BTC/USD", "status": "insufficient_data",
+            "bars_used": len(bars), "minimum_required": 3000,
+            "automated_execution": False, "order_submitted": False,
+            "alpaca_write_api_called": False,
+        }
+    try:
+        result = run_stage45_report(
+            bars, train_fraction, starting_equity, notional_usd, fee_rate, slippage_bps
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    split = result["split_index"]
+    return {
+        "symbol": "BTC/USD", "timeframe": timeframe,
+        "status": "stage4_5_train_only_parameter_selection",
+        "validation": "RESEARCH_ONLY_NOT_CERTIFIED",
+        "bars_used": len(bars), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "split": {
+            "method": "chronological_strict_boundary",
+            "train_fraction": train_fraction,
+            "training_bars": split,
+            "holdout_bars": len(bars) - split,
+            "train_to": bars[split - 1].get("t"),
+            "first_possible_holdout_fill": result["first_possible_holdout_fill"],
+            "holdout_to": bars[-1].get("t"),
+        },
+        "research": {
+            "strategy": "Breakout pullback + relative volume",
+            "predeclared_grid": {
+                "relative_volume_threshold": [1.2, 1.5, 1.8],
+                "pullback_atr": [0.15, 0.25, 0.40],
+                "pullback_bars": [2, 4, 6],
+                "donchian_lookback": 20,
+                "stop_atr_multiple": 1.5,
+                "reward_risk": 2.0,
+            },
+            "grid_size": result["grid_size"],
+            "selection_rule": result["selection_rule"],
+            "qualified_candidates": result["qualified_candidates"],
+            "selected_parameters": result["selected_parameters"],
+            "selected_training_metrics": result["selected_training_metrics"],
+            "holdout": result["holdout"],
+            "top_training_candidates": result["top_training_candidates"],
+            "diagnostics": result["diagnostics"],
+            "assumptions": {
+                "starting_equity_usd": starting_equity,
+                "fixed_notional_usd": notional_usd,
+                "fee_per_side_percent": fee_rate * 100,
+                "slippage_bps_per_side": slippage_bps,
+                "holdout_selection": "No parameter selection or ranking uses holdout metrics.",
+            },
+        },
+        "automated_execution": False,
+        "order_submitted": False,
+        "alpaca_write_api_called": False,
     }
