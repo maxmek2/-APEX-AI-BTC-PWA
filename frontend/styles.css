@@ -617,3 +617,17 @@ h2,h3{letter-spacing:.015em}
   .ticker-price strong{font-size:13px}
   .account-row,.setting-row,.account-row b,.setting-row b{font-size:6.5px}
 }
+
+
+/* v31 — one collapsible drawer for Paper Trade Engine through Settings */
+.tools-drawer{margin:0}
+.tools-drawer>summary{min-height:66px}
+.tools-drawer>summary strong{color:#d9ecff}
+.tools-drawer .tools-content{gap:12px}
+.tools-drawer .tools-content>.panel{scroll-margin-top:12px}
+@media(max-width:600px){
+ .tools-drawer>summary{min-height:58px;padding:12px}
+ .tools-drawer>summary strong{font-size:13px}
+ .tools-drawer>summary small{font-size:8px}
+ .tools-drawer .tools-content{padding:8px;gap:8px}
+}
