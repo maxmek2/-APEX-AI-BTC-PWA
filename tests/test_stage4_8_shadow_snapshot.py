@@ -26,7 +26,7 @@ def test_shadow_snapshot_never_submits_orders(monkeypatch):
 
     monkeypatch.setattr(main, "fetch_backtest_bars", fake_fetch)
     with TestClient(main.app) as client:
-        response = client.get("/api/paper/shadow-snapshot?limit=3000")
+        response = client.get("/api/research/shadow-snapshot?limit=3000")
     assert response.status_code == 200
     body = response.json()
     assert body["mode"] == "READ_ONLY_SHADOW_SNAPSHOT"
