@@ -8,12 +8,12 @@ from __future__ import annotations
 from datetime import datetime
 
 try:
-    from .stage43 import run_breakout_backtest, _stamp
+    from .stage43 import run_breakout_backtest
     from .stage44 import build_stage44_signals
     from .stage54 import build_market_regimes
     from .stage55 import audit_bar_integrity
 except ImportError:
-    from stage43 import run_breakout_backtest, _stamp
+    from stage43 import run_breakout_backtest
     from stage44 import build_stage44_signals
     from stage54 import build_market_regimes
     from stage55 import audit_bar_integrity
@@ -60,6 +60,27 @@ def _longest_losing_streak(trades: list[dict]) -> int:
     return longest
 
 
+def _failure_hypotheses(trades: list[dict], gross: float, fees: float,
+                        by_reason: dict[str, list[dict]]) -> list[str]:
+    hypotheses = []
+    if not trades:
+        return ["No closed training trades: the current entry condition is too sparse for outcome attribution."]
+    if gross <= 0:
+        hypotheses.append("Training gross P&L is non-positive before fees; entry/exit behavior itself needs review.")
+    # Only compare fees with gross profit when gross P&L is actually positive.
+    # If gross is negative, saying fees consume positive gross profit is misleading.
+    elif fees >= gross:
+        hypotheses.append("Estimated fees consume all positive gross P&L; turnover or trade edge may not cover costs.")
+    stop_trades = sum(len(v) for k, v in by_reason.items() if "STOP_LOSS" in k)
+    if stop_trades / len(trades) >= 0.5:
+        hypotheses.append("At least half of closed trades exit by stop loss; inspect entry timing, market regime and stop distance.")
+    if _longest_losing_streak(trades) >= 5:
+        hypotheses.append("A losing streak of five or more occurred; inspect whether losses cluster in specific regimes.")
+    if not hypotheses:
+        hypotheses.append("No single dominant failure signature was established; retain the strategy as unvalidated.")
+    return hypotheses
+
+
 def run_stage56_failure_report(
     bars: list[dict], requested_bars: int,
     starting_equity: float = 100.0, notional_usd: float = 10.0,
@@ -85,8 +106,6 @@ def run_stage56_failure_report(
         }
 
     split = int(len(bars) * train_fraction)
-    # Deliberately truncate all strategy calculations to the training window.
-    # No holdout outcomes, signals, regimes or metrics are read by this stage.
     train_bars = bars[:split]
     built = build_stage44_signals(
         train_bars, lookback=20, relative_volume_threshold=1.5,
@@ -102,9 +121,7 @@ def run_stage56_failure_report(
     metrics = result["metrics"]
     regimes = build_market_regimes(train_bars)["regime_by_base"]
 
-    time_index = {}
-    for index, bar in enumerate(train_bars):
-        time_index[bar.get("t")] = index
+    time_index = {bar.get("t"): index for index, bar in enumerate(train_bars)}
     by_reason: dict[str, list[dict]] = {}
     by_regime: dict[str, list[dict]] = {}
     enriched = []
@@ -113,7 +130,6 @@ def run_stage56_failure_report(
         reason = str(trade.get("exit_reason") or "UNKNOWN")
         by_reason.setdefault(reason, []).append(trade)
         entry_index = time_index.get(trade.get("entry_time"))
-        # Entry fills at this bar's open; use the prior signal bar's completed context.
         signal_index = entry_index - 1 if entry_index is not None else None
         regime = regimes[signal_index] if signal_index is not None and signal_index >= 0 else "REGIME_UNAVAILABLE"
         by_regime.setdefault(regime, []).append(trade)
@@ -151,22 +167,7 @@ def run_stage56_failure_report(
         "average_gross_covers_average_fee": avg_gross > avg_fees,
     }
 
-    hypotheses = []
-    if not trades:
-        hypotheses.append("No closed training trades: the current entry condition is too sparse for outcome attribution.")
-    else:
-        if gross <= 0:
-            hypotheses.append("Training gross P&L is non-positive before fees; entry/exit behavior itself needs review.")
-        if fees >= max(gross, 0):
-            hypotheses.append("Estimated fees are at least as large as positive gross P&L; turnover or trade edge may not cover costs.")
-        stop_trades = sum(len(v) for k, v in by_reason.items() if "STOP_LOSS" in k)
-        if stop_trades / len(trades) >= 0.5:
-            hypotheses.append("At least half of closed trades exit by stop loss; inspect entry timing, market regime and stop distance.")
-        if _longest_losing_streak(trades) >= 5:
-            hypotheses.append("A losing streak of five or more occurred; inspect whether losses cluster in specific regimes.")
-        if not hypotheses:
-            hypotheses.append("No single dominant failure signature was established; retain the strategy as unvalidated.")
-
+    hypotheses = _failure_hypotheses(trades, gross, fees, by_reason)
     training_pass = (
         len(trades) >= 30
         and net > 0
