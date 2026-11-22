@@ -50,6 +50,9 @@ def test_stage517_backtest_keeps_holdout_sealed_and_no_execution():
     assert report["automated_execution"] is False
     assert report["strategy"]["parameter_search"] is False
     assert report["metrics"]["trades"] >= 0
+    assert report["comparators"]["same_training_slice_and_cost_assumptions"] is True
+    assert "frozen_stage44_baseline_metrics" in report["comparators"]
+    assert "frozen_stage57_hourly_candidate_metrics" in report["comparators"]
 
 
 def test_stage517_rejects_invalid_nonpositive_close():
