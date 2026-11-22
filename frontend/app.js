@@ -5,7 +5,9 @@ const $=id=>document.getElementById(id);
 const money=v=>Number.isFinite(Number(v))?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(v)):"—";
 const num=v=>Number.isFinite(Number(v))?Number(v):null;
 function text(id,value){const e=$(id);if(e)e.textContent=value;}
-function paperHeaders(path,extra={}){const headers={Accept:"application/json",...extra};if(path.includes("/paper/")||path==="/account"||path==="/positions"){const token=sessionStorage.getItem("apexPaperToken")||"";if(token)headers.Authorization="Bearer "+token;}return headers;}
+function getPaperToken(){return localStorage.getItem("apexPaperToken")||sessionStorage.getItem("apexPaperToken")||"";}
+function savePaperToken(value,remember){const token=String(value||"").trim();if(token){sessionStorage.setItem("apexPaperToken",token);if(remember)localStorage.setItem("apexPaperToken",token);else localStorage.removeItem("apexPaperToken");}else{sessionStorage.removeItem("apexPaperToken");localStorage.removeItem("apexPaperToken");}}
+function paperHeaders(path,extra={}){const headers={Accept:"application/json",...extra};if(path.includes("/paper/")||path==="/account"||path==="/positions"){const token=getPaperToken();if(token)headers.Authorization="Bearer "+token;}return headers;}
 async function get(path){const r=await fetch(API+path,{headers:paperHeaders(path),cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status+" "+path);return r.json();}
 function setStatus(message,ok=false){text("connection",message);const e=$("connection");if(e)e.style.color=ok?"var(--green)":"#ffb17e";text("cloud-title",ok?"Robot Monitor Online":"Market Monitor");}
 function ema(values,p){if(values.length<p)return values.map(()=>null);const out=Array(values.length).fill(null);let v=values.slice(0,p).reduce((a,b)=>a+b,0)/p;out[p-1]=v;const alpha=2/(p+1);for(let i=p;i<values.length;i++){v=alpha*values[i]+(1-alpha)*v;out[i]=v;}return out;}
@@ -108,7 +110,8 @@ async function runStage6Readiness(){
 }
 function setupControls(){
  const tokenInput=$("paper-api-token");
- if(tokenInput){tokenInput.value=sessionStorage.getItem("apexPaperToken")||"";tokenInput.addEventListener("change",()=>{sessionStorage.setItem("apexPaperToken",tokenInput.value.trim());loadPaperEngineStatus();});}
+ const rememberToken=$("remember-paper-token");
+ if(tokenInput){const savedToken=getPaperToken();tokenInput.value=savedToken;if(rememberToken){rememberToken.checked=true;if(savedToken)savePaperToken(savedToken,true);rememberToken.addEventListener("change",()=>{savePaperToken(tokenInput.value,rememberToken.checked);});}tokenInput.addEventListener("change",()=>{savePaperToken(tokenInput.value,!!rememberToken?.checked);loadPaperEngineStatus();});}
  const tf=$("timeframe");tf.addEventListener("change",()=>{selectedTimeframe=tf.value;text("signal-timeframe",labels[selectedTimeframe].toUpperCase());refresh().catch(e=>setStatus(e.message));});
  $("run-backtest").addEventListener("click",runBacktest);
  const s51=$("run-stage51");if(s51)s51.addEventListener("click",runStage51Ledger);
