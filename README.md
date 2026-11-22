@@ -230,3 +230,11 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - Divides the later half of the available history into 2–5 chronological, non-overlapping folds. Each fold starts with fresh simulated equity and closes any remaining position at that fold boundary.
 - Reports per-fold trade counts, net P/L, drawdown, and 0/5/10/20 bps slippage sensitivity.
 - More history and multiple folds improve diagnostics but do not guarantee representativeness or future profitability. Endpoint is read-only and does not call Alpaca order/write APIs.
+
+
+## Stage 4.7 — bootstrap robustness diagnostics
+- GET `/api/backtest/stage4-7?timeframe=5Min&limit=30000&folds=3&simulations=2000` resamples closed-trade net P/L from the fixed-parameter walk-forward folds.
+- Reports final-equity and closed-trade drawdown P05/median/P95, plus the fraction of resampled paths ending above starting equity.
+- Uses a fixed seed for reproducibility. Bootstrap is not a forecast and assumes trade outcomes can be resampled; serial dependence, volatility clustering, regime changes, and unseen execution costs are not modelled.
+- If no closed trades exist, the endpoint returns no bootstrap distribution rather than inventing one.
+- Read-only research; no broker order/write calls.
