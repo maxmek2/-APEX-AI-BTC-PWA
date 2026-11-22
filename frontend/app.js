@@ -126,6 +126,32 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage514(){
+ const out=$("stage514-result"),btn=$("run-stage514");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Applying fixed research evidence gates to frozen candidate and baseline using training data only…";
+ try{
+  const data=await get("/research/stage5-14/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Decision gate was not run.";return;}
+  const c=data.candidate||{},b=data.baseline||{};
+  const gateRows=Object.entries(c.gates||{}).map(([k,v])=>'<div class="check-row"><span>'+escapeLedger(k.replaceAll("_"," "))+'</span><strong class="'+(v?"check-pass":"check-fail")+'">'+(v?"PASS":"FAIL")+'</strong></div>').join("");
+  const cohortTable=(title,items)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Cohort</th><th>Trades</th><th>Win %</th><th>Net P&amp;L</th><th>Net PF</th><th>Loss streak</th></tr></thead><tbody>'+
+   (items||[]).map(x=>'<tr><td>'+escapeLedger(x.cohort)+'</td><td>'+escapeLedger(x.trades)+'</td><td>'+escapeLedger(x.win_rate_percent)+'%</td><td>'+money(x.net_pnl_usd)+'</td><td>'+escapeLedger(x.net_profit_factor??"—")+'</td><td>'+escapeLedger(x.longest_losing_streak)+'</td></tr>').join("")+'</tbody></table></div>';
+  const groupTable=(title,items)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry group</th><th>Trades</th><th>Stops</th><th>False breaks</th><th>Win %</th><th>Net P&amp;L</th><th>Net PF</th></tr></thead><tbody>'+
+   Object.entries(items||{}).map(([k,v])=>'<tr><td>'+escapeLedger(k)+'</td><td>'+escapeLedger(v.trades)+'</td><td>'+escapeLedger(v.stop_loss_trades)+'</td><td>'+escapeLedger(v.false_breakout_count)+'</td><td>'+escapeLedger(v.win_rate_percent)+'%</td><td>'+money(v.net_pnl_usd)+'</td><td>'+escapeLedger(v.net_profit_factor??"—")+'</td></tr>').join("")+'</tbody></table></div>';
+  const grid='<div class="backtest-grid">'+ledgerMetric("Training bars",data.training_bars??0)+ledgerMetric("Candidate trades",c.overall_metrics?.trades??0)+ledgerMetric("Candidate net P&amp;L",money(c.overall_metrics?.net_pnl_usd),Number(c.overall_metrics?.net_pnl_usd)>0)+ledgerMetric("Candidate net PF",c.overall_metrics?.net_profit_factor??"—",Number(c.overall_metrics?.net_profit_factor)>1)+ledgerMetric("Candidate gates passed",String(c.gates_passed??0)+"/"+String(c.gates_total??0))+ledgerMetric("Baseline net P&amp;L",money(b.overall_metrics?.net_pnl_usd),Number(b.overall_metrics?.net_pnl_usd)>0)+'</div>';
+  const findings='<h4>Decision findings</h4><ul>'+((data.findings||[]).map(x=>'<li>'+escapeLedger(x)+'</li>').join(""))+'</ul>';
+  out.innerHTML='<strong class="'+(data.decision==="RESEARCH_GO"?"check-pass":"check-fail")+'">'+escapeLedger(data.status)+'</strong>'+grid+
+   '<h4>Candidate evidence gates</h4>'+gateRows+
+   cohortTable("Candidate · chronological training cohorts",c.cohorts)+
+   cohortTable("Baseline · chronological training cohorts",b.cohorts)+
+   groupTable("Candidate · entry quality attribution",c.entry_quality_groups)+
+   findings+
+   '<small class="muted">Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'. RESEARCH_GO permits only a separately approved untouched holdout test; it never enables trading. Decision thresholds are conservative screening criteria, not profitability guarantees. No optimization, broker API calls, order submission or automated execution.</small>';
+ }catch(e){out.textContent="Stage 5.14 decision gate unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage513(){
  const out=$("stage513-result"),btn=$("run-stage513");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Auditing chronological training cohorts and sample adequacy…";
@@ -437,6 +463,7 @@ function setupControls(){
  const s511=$("run-stage511");if(s511)s511.addEventListener("click",runStage511);
  const s512=$("run-stage512");if(s512)s512.addEventListener("click",runStage512);
  const s513=$("run-stage513");if(s513)s513.addEventListener("click",runStage513);
+ const s514=$("run-stage514");if(s514)s514.addEventListener("click",runStage514);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
