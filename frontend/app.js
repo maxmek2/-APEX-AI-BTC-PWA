@@ -126,6 +126,31 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage513(){
+ const out=$("stage513-result"),btn=$("run-stage513");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Auditing chronological training cohorts and sample adequacy…";
+ try{
+  const data=await get("/research/stage5-13/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Temporal audit was not run.";return;}
+  const render=(title,obj)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Cohort</th><th>Trades</th><th>Wins</th><th>Win %</th><th>Net P&amp;L</th><th>Net PF</th><th>Longest loss streak</th><th>30-trade sample</th></tr></thead><tbody>'+
+   (obj?.cohorts||[]).map(x=>'<tr><td>'+escapeLedger(x.cohort)+'</td><td>'+escapeLedger(x.trades)+'</td><td>'+escapeLedger(x.wins)+'</td><td>'+escapeLedger(x.win_rate_percent)+'%</td><td>'+money(x.net_pnl_usd)+'</td><td>'+escapeLedger(x.net_profit_factor??"—")+'</td><td>'+escapeLedger(x.longest_losing_streak)+'</td><td>'+escapeLedger(x.minimum_30_trade_sample_met?"YES":"NO")+'</td></tr>').join("")+
+   '</tbody></table></div>';
+  const grid=(title,obj)=>'<div class="backtest-grid">'+
+   ledgerMetric(title+" populated cohorts",obj?.summary?.populated_cohorts??0)+
+   ledgerMetric(title+" positive cohorts",obj?.summary?.positive_net_cohorts??0)+
+   ledgerMetric(title+" negative cohorts",obj?.summary?.negative_net_cohorts??0)+
+   ledgerMetric(title+" consistency",obj?.summary?.cohort_consistency??"—")+'</div>';
+  const findings='<h4>Findings to investigate</h4><ul>'+((data.findings||[]).map(x=>'<li>'+escapeLedger(x)+'</li>').join(""))+'</ul>';
+  out.innerHTML='<strong>'+escapeLedger(data.status)+'</strong>'+
+   '<div class="backtest-grid">'+ledgerMetric("Training bars",data.training_bars??0)+ledgerMetric("Candidate overall net P&amp;L",money(data.candidate?.overall_metrics?.net_pnl_usd),Number(data.candidate?.overall_metrics?.net_pnl_usd)>0)+ledgerMetric("Candidate overall trades",data.candidate?.overall_metrics?.trades??0)+ledgerMetric("Baseline overall net P&amp;L",money(data.baseline?.overall_metrics?.net_pnl_usd),Number(data.baseline?.overall_metrics?.net_pnl_usd)>0)+'</div>'+
+   grid("Candidate",data.candidate)+render("Candidate · chronological training cohorts",data.candidate)+
+   grid("Baseline",data.baseline)+render("Baseline · chronological training cohorts",data.baseline)+findings+
+   '<small class="muted">Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'. Cohorts are descriptive in-sample partitions, not independent validation. Thirty trades is an evidence flag, not proof of profitability. No optimization, broker API calls, order submission or automated execution.</small>';
+ }catch(e){out.textContent="Stage 5.13 audit unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage512(){
  const out=$("stage512-result"),btn=$("run-stage512");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Measuring breakout quality and post-entry failure observations on training data only…";
@@ -411,6 +436,7 @@ function setupControls(){
  const s510=$("run-stage510");if(s510)s510.addEventListener("click",runStage510);
  const s511=$("run-stage511");if(s511)s511.addEventListener("click",runStage511);
  const s512=$("run-stage512");if(s512)s512.addEventListener("click",runStage512);
+ const s513=$("run-stage513");if(s513)s513.addEventListener("click",runStage513);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
