@@ -87,6 +87,26 @@ async function runStage51Ledger(){
  }catch(e){out.textContent="Stage 5.2 ledger unavailable: "+e.message;}
  finally{btn.disabled=false;}
 }
+
+async function runStage53(){
+ const out=$("stage53-result"),btn=$("run-stage53");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Fetching BTC/USD history, diagnosing baseline trades and evaluating the training-only grid…";
+ try{
+  const data=await get("/research/stage5-3/run?timeframe=5Min&limit=10000&train_fraction=0.60&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&minimum_training_trades=30&max_training_drawdown_percent=5");
+  if(data.result==="INSUFFICIENT_DATA"){out.textContent="Insufficient data: "+escapeLedger(data.bars_used)+" / 3000 minimum candles.";return;}
+  const opt=data.optimization||{},base=data.baseline_diagnostics||{},train=base.training_metrics||{},hold=base.holdout_metrics||{};
+  const reasonRows=(diag)=>Object.entries(diag?.exit_reason_breakdown||{}).map(([name,v])=>'<tr><td>'+escapeLedger(name)+'</td><td>'+escapeLedger(v.trades)+'</td><td>'+escapeLedger(v.win_rate_percent)+'%</td><td>'+money(v.net_pnl_usd)+'</td></tr>').join("");
+  const candidateRows=(opt.top_training_candidates||[]).map((c,i)=>{const p=c.parameters||{},m=c.training_metrics||{};return '<tr><td>'+(i+1)+'</td><td>'+escapeLedger(p.relative_volume_threshold)+' / '+escapeLedger(p.pullback_atr)+' / '+escapeLedger(p.pullback_bars)+'</td><td>'+escapeLedger(p.stop_atr_multiple)+' / '+escapeLedger(p.reward_risk)+'</td><td>'+escapeLedger(m.trades)+'</td><td>'+money(m.net_pnl_usd)+'</td><td>'+escapeLedger(m.net_profit_factor??"—")+'</td><td>'+escapeLedger(m.max_drawdown_percent)+'%</td><td class="'+(c.training_gate_passed?"check-pass":"check-fail")+'">'+(c.training_gate_passed?"PASS":"FAIL")+'</td></tr>';}).join("");
+  const selected=opt.selected_parameters?'<p><strong>Selected training candidate:</strong> '+escapeLedger(JSON.stringify(opt.selected_parameters))+'</p>':'<p class="check-fail"><strong>No candidate passed all training gates.</strong> Holdout was not used to select or rescue a candidate.</p>';
+  const holdout=opt.holdout?'<h4>One-time untouched holdout check</h4><div class="backtest-grid">'+ledgerMetric("Holdout trades",opt.holdout.metrics?.trades??0)+ledgerMetric("Holdout net P&L",money(opt.holdout.metrics?.net_pnl_usd),Number(opt.holdout.metrics?.net_pnl_usd)>0)+ledgerMetric("Holdout net PF",opt.holdout.metrics?.net_profit_factor??"—")+ledgerMetric("Holdout max drawdown",String(opt.holdout.metrics?.max_drawdown_percent??"—")+"%")+ledgerMetric("Boundary valid",opt.holdout.entries_after_split?"YES":"NO",!!opt.holdout.entries_after_split)+ledgerMetric("Holdout gate",opt.holdout.gate_passed?"PASS":"FAIL",!!opt.holdout.gate_passed)+'</div>'+ledgerTable(opt.holdout.trades,"Selected candidate holdout ledger"):'<p class="muted">Holdout not evaluated because no training-qualified candidate exists.</p>';
+  const diag=(label,metrics,d)=>'<h4>'+label+'</h4><div class="backtest-grid">'+ledgerMetric("Trades",metrics.trades??0)+ledgerMetric("Net P&L",money(metrics.net_pnl_usd),Number(metrics.net_pnl_usd)>0)+ledgerMetric("Net PF",metrics.net_profit_factor??"—")+ledgerMetric("Win rate",String(metrics.win_rate_percent??0)+"%")+ledgerMetric("Max drawdown",String(metrics.max_drawdown_percent??0)+"%")+ledgerMetric("Stop-loss exits",Object.entries(d?.exit_reason_breakdown||{}).filter(([k])=>k.startsWith("STOP_LOSS")).reduce((n,[,v])=>n+Number(v.trades||0),0))+'</div><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Exit reason</th><th>Trades</th><th>Win rate</th><th>Net P&amp;L</th></tr></thead><tbody>'+reasonRows(d)+'</tbody></table></div>';
+  const meta='<strong class="'+(opt.qualified_training_candidates>0?"check-pass":"check-fail")+'">'+escapeLedger(data.result)+'</strong><p>'+escapeLedger(data.symbol)+' · '+escapeLedger(data.bars_used)+'/'+escapeLedger(data.requested_bars)+' candles · '+escapeLedger(opt.grid_size)+' candidates · '+escapeLedger(opt.qualified_training_candidates)+' training-qualified</p><small class="muted">'+ledgerTime(data.period?.from)+' → '+ledgerTime(data.period?.to)+' · Train '+Math.round(Number(data.split?.train_fraction)*100)+'% / untouched holdout '+Math.round((1-Number(data.split?.train_fraction))*100)+'%</small>';
+  const table='<h4>Top training-only candidates</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>#</th><th>Volume / pullback ATR / bars</th><th>Stop ATR / R:R</th><th>Trades</th><th>Net P&amp;L</th><th>Net PF</th><th>Max DD</th><th>Gate</th></tr></thead><tbody>'+candidateRows+'</tbody></table></div>';
+  out.innerHTML=meta+diag("Baseline training diagnostics",train,base.training)+diag("Baseline holdout diagnostics",hold,base.holdout)+table+selected+holdout+'<small class="muted">Selection uses training data only. Holdout is evaluated at most once. Fees/slippage are assumptions, not actual fills. Read-only market-data GET; no account/order/position calls; no order submitted; automated execution remains disabled.</small>';
+ }catch(e){out.textContent="Stage 5.3 unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage5Validation(){
  const out=$("stage5-result"),btn=$("run-stage5");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Reading Paper account, positions and open orders…";
@@ -115,6 +135,7 @@ function setupControls(){
  const tf=$("timeframe");tf.addEventListener("change",()=>{selectedTimeframe=tf.value;text("signal-timeframe",labels[selectedTimeframe].toUpperCase());refresh().catch(e=>setStatus(e.message));});
  $("run-backtest").addEventListener("click",runBacktest);
  const s51=$("run-stage51");if(s51)s51.addEventListener("click",runStage51Ledger);
+ const s53=$("run-stage53");if(s53)s53.addEventListener("click",runStage53);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});

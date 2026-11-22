@@ -77,7 +77,7 @@ def build_stage44_signals(bars: list[dict], lookback: int = 20,
             if p > setup.get("origin", p) and touched and reclaimed:
                 diag["pullback_confirmations"] += 1
                 masks["breakout_pullback"][i] = True
-                if ratio is not None and ratio >= 1.5:
+                if ratio is not None and ratio >= relative_volume_threshold:
                     masks["breakout_pullback_relvol"][i] = True
                 continue
             survivors.append(setup)
