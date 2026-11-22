@@ -27,6 +27,7 @@ try:
     from .stage513 import run_stage513_temporal_stability_audit
     from .stage514 import run_stage514_strategy_decision_gate
     from .stage515 import run_stage515_loss_concentration_investigation
+    from .stage516 import run_stage516_trade_path_diagnostics
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
     from stage44 import run_stage44_report, build_stage44_signals
@@ -47,6 +48,7 @@ except ImportError:  # uvicorn main:app with backend as app-dir
     from stage513 import run_stage513_temporal_stability_audit
     from stage514 import run_stage514_strategy_decision_gate
     from stage515 import run_stage515_loss_concentration_investigation
+    from stage516 import run_stage516_trade_path_diagnostics
 
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
@@ -2997,6 +2999,43 @@ async def stage515_loss_concentration_investigation(
         }
     try:
         report = run_stage515_loss_concentration_investigation(
+            bars, requested_bars=limit,
+            starting_equity=starting_equity, notional_usd=notional_usd,
+            fee_rate=fee_rate, slippage_bps=slippage_bps,
+            train_fraction=train_fraction,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    report.update({
+        "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": bool(has_more_data),
+        "data_pages_fetched": data_pages,
+        "market_data_api_read": True,
+    })
+    return report
+
+@app.get("/api/research/stage5-16/run")
+async def stage516_trade_path_diagnostics(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(30000, ge=5000, le=30000),
+    train_fraction: float = Query(0.60, ge=0.50, le=0.80),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+):
+    """Stage 5.16: training-only MFE/MAE and OHLC path diagnostics."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 5000:
+        return {
+            "stage": "5.16", "status": "INSUFFICIENT_DATA",
+            "bars_used": len(bars), "requested_bars": limit,
+            "minimum_bars": 5000, "holdout_accessed": False,
+            "order_submitted": False, "automated_execution": False,
+        }
+    try:
+        report = run_stage516_trade_path_diagnostics(
             bars, requested_bars=limit,
             starting_equity=starting_equity, notional_usd=notional_usd,
             fee_rate=fee_rate, slippage_bps=slippage_bps,

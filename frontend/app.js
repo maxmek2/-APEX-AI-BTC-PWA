@@ -126,6 +126,37 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage516(){
+ const out=$("stage516-result"),btn=$("run-stage516");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Replaying frozen Stage 5.7 and Stage 4.4 on training data; measuring MFE/MAE and OHLC path order…";
+ try{
+  const data=await get("/research/stage5-16/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Trade-path analysis was not run.";return;}
+  const table=(title,rows)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Exit</th><th>Trades</th><th>Fav first</th><th>Adv first</th><th>Same-bar ambiguous</th><th>Median MFE R</th><th>Median MAE R</th></tr></thead><tbody>'+
+   Object.entries(rows||{}).map(([k,v])=>'<tr><td>'+escapeLedger(k)+'</td><td>'+escapeLedger(v.trades)+'</td><td>'+escapeLedger(v.favourable_first_trades)+'</td><td>'+escapeLedger(v.adverse_first_trades)+'</td><td>'+escapeLedger(v.same_bar_order_ambiguous_trades)+'</td><td>'+escapeLedger(v.median_mfe_r??"—")+'</td><td>'+escapeLedger(v.median_mae_r??"—")+'</td></tr>').join("")+'</tbody></table></div>';
+  const render=(title,obj)=>{const s=obj.summary||{},ledger=(obj.trade_ledger||[]).slice().reverse().slice(0,25).map(x=>'<tr><td>'+escapeLedger(x.entry_time)+'</td><td>'+escapeLedger(x.exit_reason)+'</td><td>'+escapeLedger(x.bars_held_including_entry)+'</td><td>'+escapeLedger(x.mfe_r)+'</td><td>'+escapeLedger(x.mae_r)+'</td><td>'+escapeLedger(x.pre_exit_bar_mfe_r)+'</td><td>'+escapeLedger(x.pre_exit_bar_mae_r)+'</td><td>'+escapeLedger(x.half_r_threshold_order)+'</td></tr>').join("");
+   return '<h4>'+title+'</h4><div class="backtest-grid">'+
+    ledgerMetric("Trades",s.trades??0)+ledgerMetric("Median MFE (R)",s.median_mfe_r??"—")+
+    ledgerMetric("Median MAE (R)",s.median_mae_r??"—")+
+    ledgerMetric("Pre-exit median MFE (R)",s.median_pre_exit_mfe_r??"—")+
+    ledgerMetric("Pre-exit median MAE (R)",s.median_pre_exit_mae_r??"—")+
+    ledgerMetric("Favourable first",s.favourable_first_trades??0)+
+    ledgerMetric("Adverse first",s.adverse_first_trades??0)+
+    ledgerMetric("Same-bar ambiguous",s.same_bar_order_ambiguous_trades??0)+
+    ledgerMetric("Neither ±0.5R",s.neither_threshold_trades??0)+'</div>'+
+    table("Path attribution by exit reason",obj.exit_reason_path_attribution)+
+    '<h4>Latest trade-path ledger · 25 trades</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Bars</th><th>MFE R</th><th>MAE R</th><th>Pre-exit MFE</th><th>Pre-exit MAE</th><th>First ±0.5R</th></tr></thead><tbody>'+ledger+'</tbody></table></div>';
+  };
+  out.innerHTML='<strong>'+escapeLedger(data.status)+'</strong><p class="muted">Training bars: '+escapeLedger(data.training_bars)+' · Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'</p>'+
+   render("Candidate · frozen Stage 5.7",data.candidate?.path_diagnostics||{})+
+   render("Baseline · frozen Stage 4.4",data.baseline?.path_diagnostics||{})+
+   '<h4>Interpretation limits</h4><ul>'+((data.findings||[]).map(x=>'<li>'+escapeLedger(x)+'</li>').join(""))+'</ul>'+
+   '<small class="muted">OHLC bars do not reveal the order of high and low within a candle. Same-bar threshold touches are marked ambiguous. No stop/target, entry, sizing or strategy changes; no parameter search, broker writes, order submission or automated execution.</small>';
+ }catch(e){out.textContent="Stage 5.16 analysis unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage515(){
  const out=$("stage515-result"),btn=$("run-stage515");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Replaying frozen candidate and baseline; accounting for loss concentration in training data only…";
@@ -502,6 +533,7 @@ function setupControls(){
  const s513=$("run-stage513");if(s513)s513.addEventListener("click",runStage513);
  const s514=$("run-stage514");if(s514)s514.addEventListener("click",runStage514);
  const s515=$("run-stage515");if(s515)s515.addEventListener("click",runStage515);
+ const s516=$("run-stage516");if(s516)s516.addEventListener("click",runStage516);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
