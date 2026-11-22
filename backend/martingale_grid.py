@@ -53,8 +53,8 @@ def build_signal(bars: list[dict[str, Any]]) -> dict[str, Any]:
         }
     closes = [float(b["c"]) for b in clean]
     rsi = _rsi(closes, CONFIG["rsi_period"])
-    previous = clean[-2]
-    bearish = float(previous["c"]) < float(previous["o"])
+    signal_candle = clean[-1]
+    bearish = float(signal_candle["c"]) < float(signal_candle["o"])
     eligible = rsi is not None and rsi > CONFIG["rsi_threshold"] and bearish
     return {
         **CONFIG,
