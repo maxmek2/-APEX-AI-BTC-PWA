@@ -126,6 +126,45 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage58(){
+ const out=$("stage58-result"),btn=$("run-stage58");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Fetching BTC/USD M5 history and diagnosing the fixed Stage 5.7 candidate on training data only…";
+ try{
+  const data=await get("/research/stage5-8/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. No attribution was run.";return;}
+  const t=data.training||{},m=t.metrics||{},r=t.risk_diagnostics||{},c=data.candidate||{};
+  const base=c.baseline_training_metrics||{},cand=c.candidate_training_metrics||{};
+  const grid='<div class="backtest-grid">'+
+   ledgerMetric("Training bars",data.training_bars??0)+
+   ledgerMetric("Candidate trades",m.trades??0)+
+   ledgerMetric("Candidate net P&L",money(m.net_pnl_usd),Number(m.net_pnl_usd)>0)+
+   ledgerMetric("Candidate net PF",m.net_profit_factor??"—")+
+   ledgerMetric("Win rate",String(m.win_rate_percent??0)+"%")+
+   ledgerMetric("Stop-loss share",String(r.stop_loss_share_percent??0)+"%")+
+   ledgerMetric("Longest losing streak",r.longest_losing_streak??0)+
+   ledgerMetric("Median realized R",r.realized_net_r_median??"—")+
+   ledgerMetric("Median hold",r.median_holding_minutes==null?"—":String(r.median_holding_minutes)+" min")+
+   ledgerMetric("Average entry gap (ATR)",r.average_entry_gap_atr??"—")+
+   ledgerMetric("Baseline net P&L",money(base.net_pnl_usd),Number(base.net_pnl_usd)>0)+
+   ledgerMetric("Candidate vs baseline",money(Number(cand.net_pnl_usd||0)-Number(base.net_pnl_usd||0)),Number(cand.net_pnl_usd)>Number(base.net_pnl_usd))+'</div>';
+  const groupTable=(title,obj)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Group</th><th>Trades</th><th>Win %</th><th>Net P&amp;L</th><th>Net PF</th></tr></thead><tbody>'+
+   Object.entries(obj||{}).map(([k,v])=>'<tr><td>'+escapeLedger(k)+'</td><td>'+escapeLedger(v.trades)+'</td><td>'+escapeLedger(v.win_rate_percent)+'%</td><td>'+money(v.net_pnl_usd)+'</td><td>'+escapeLedger(v.net_profit_factor??"—")+'</td></tr>').join("")+
+   '</tbody></table></div>';
+  const findings='<h4>Findings to investigate</h4><ul>'+((t.findings||[]).map(x=>'<li>'+escapeLedger(x)+'</li>').join(""))+'</ul>';
+  const trades=(t.trade_ledger||[]).slice(-25).reverse().map(x=>'<tr><td>'+escapeLedger(x.entry_time)+'</td><td>'+escapeLedger(x.exit_reason)+'</td><td>'+escapeLedger(x.entry_session_utc)+'</td><td>'+escapeLedger(x.entry_regime)+'</td><td>'+escapeLedger(x.realized_net_r_multiple??"—")+'</td><td>'+money(x.net_pnl_usd)+'</td></tr>').join("");
+  out.innerHTML='<strong>'+escapeLedger(data.status)+'</strong>'+grid+
+   groupTable("Exit reason attribution",t.exit_reason_attribution)+
+   groupTable("Entry session · UTC",t.entry_session_attribution_utc)+
+   groupTable("Entry market regime",t.entry_regime_attribution)+
+   groupTable("Holding duration",t.holding_duration_attribution)+
+   groupTable("Next-bar entry gap",t.entry_gap_attribution)+findings+
+   '<h4>Latest training trades</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Session</th><th>Regime</th><th>Net R</th><th>Net P&amp;L</th></tr></thead><tbody>'+trades+'</tbody></table></div>'+
+   '<small class="muted">Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'. No holdout outcomes, parameter search, broker API calls, order submission, or automated execution. Session labels are UTC. Realized R is model-derived from the fixed 1.5 ATR stop and configured notional.</small>';
+ }catch(e){out.textContent="Stage 5.8 diagnostics unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage57(){
  const out=$("stage57-result"),btn=$("run-stage57");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Fetching BTC/USD M5 history; testing one fixed trend-gated candidate on training data only…";
@@ -223,6 +262,7 @@ function setupControls(){
  const s55=$("run-stage55");if(s55)s55.addEventListener("click",runStage55);
  const s56=$("run-stage56");if(s56)s56.addEventListener("click",runStage56);
  const s57=$("run-stage57");if(s57)s57.addEventListener("click",runStage57);
+ const s58=$("run-stage58");if(s58)s58.addEventListener("click",runStage58);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
