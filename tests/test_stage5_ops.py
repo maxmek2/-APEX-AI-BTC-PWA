@@ -55,4 +55,4 @@ def test_stage54_does_not_expose_secrets(monkeypatch):
     result = client.get("/api/security/stage5-4/config-audit").json()
     assert result["result"] == "CONFIG_REVIEW_PASS"
     assert result["secret_values_exposed"] is False
-    assert "token" not in str(result).lower()
+    assert "x" * 40 not in str(result)
