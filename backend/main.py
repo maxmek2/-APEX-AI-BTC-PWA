@@ -2282,3 +2282,31 @@ def _stamp_bar_end(bar: dict, seconds: int) -> datetime:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value + timedelta(seconds=seconds)
+
+
+@app.get("/api/research/safety-audit")
+async def research_safety_audit():
+    """Local configuration audit only; no broker API calls and no state changes."""
+    auto_entry_enabled = bool(_auto_entry.get("enabled", False))
+    exit_manager_armed = bool(_exit_manager.get("armed", False))
+    paper_host_verified = _paper_only_configured()
+    controls_safe = not auto_entry_enabled and not exit_manager_armed
+    result = "SAFE_FOR_READ_ONLY_RESEARCH" if paper_host_verified and controls_safe else "REQUIRES_REVIEW"
+    return {
+        "stage": "4.9",
+        "result": result,
+        "checks": {
+            "paper_host_allowlisted": paper_host_verified,
+            "paper_auto_entry_off": not auto_entry_enabled,
+            "paper_exit_manager_disarmed": not exit_manager_armed,
+            "live_trading_supported": False,
+            "live_orders_enabled": False,
+            "audit_is_read_only": True,
+        },
+        "paper_auto_entry_enabled": auto_entry_enabled,
+        "paper_exit_manager_armed": exit_manager_armed,
+        "broker_api_called": False,
+        "broker_write_api_called": False,
+        "order_submitted": False,
+        "note": "This checks local configuration only. It does not inspect broker positions, open orders, fills, secrets, or Render availability.",
+    }
