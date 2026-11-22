@@ -1041,8 +1041,8 @@ async def stage44_pullback_research(
         "history_complete_for_request": len(bars) == limit,
         "has_more_data": has_more_data, "data_pages_fetched": data_pages,
         "split": {"method": "chronological", "train_fraction": train_fraction,
-                  "training_bars": split + 1, "holdout_bars": len(bars) - split - 1,
-                  "train_to": bars[split].get("t"),
+                  "training_bars": split, "holdout_bars": len(bars) - split,
+                  "train_to": bars[split - 1].get("t"),
                   "first_possible_holdout_fill": result["first_possible_holdout_fill"],
                   "holdout_to": bars[-1].get("t")},
         "strategy": {
