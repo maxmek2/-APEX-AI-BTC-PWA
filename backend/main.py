@@ -2419,3 +2419,10 @@ async def stage48_trade_diagnostics(
         "automated_execution": False, "order_submitted": False,
         "alpaca_write_api_called": False,
     }
+
+# Stage 5.1-5.4 offline verification routes; deliberately no broker execution.
+try:
+    from .stage5_ops import router as stage5_ops_router
+except ImportError:
+    from stage5_ops import router as stage5_ops_router
+app.include_router(stage5_ops_router)
