@@ -21,4 +21,10 @@ def test_final_readiness_is_not_ready_and_never_calls_broker(monkeypatch):
     assert report["live_orders_enabled"] is False
     assert report["broker_api_called"] is False
     assert report["order_submitted"] is False
-    assert report["research_validation"]["stage4_7"] == "REQUIRES_BOOTSTRAP_OUTPUT_AND_REVIEW"
+    research = report["research_validation"]
+    assert research["strategy_validation"] == "FAILED_CURRENT_OBSERVED_RUNS"
+    assert research["stage4_5"]["qualified_candidates"] == 0
+    assert research["stage4_6"]["positive_net_pnl_folds"] == 0
+    assert research["stage4_7"]["positive_path_probability_percent"] == 0.0
+    assert research["stage4_8"]["net_pnl_usd"] < 0
+    assert "not fetched dynamically" in research["note"]
