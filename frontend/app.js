@@ -222,6 +222,7 @@ function setupControls(){
  const s54=$("run-stage54");if(s54)s54.addEventListener("click",runStage54);
  const s55=$("run-stage55");if(s55)s55.addEventListener("click",runStage55);
  const s56=$("run-stage56");if(s56)s56.addEventListener("click",runStage56);
+ const s57=$("run-stage57");if(s57)s57.addEventListener("click",runStage57);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
