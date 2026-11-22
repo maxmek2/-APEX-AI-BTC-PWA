@@ -222,3 +222,11 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - At most one selected configuration is evaluated on the untouched chronological holdout, with 0/5/10/20 bps slippage sensitivity. This reduces holdout multiple-comparison bias; it does not prove future profitability.
 - Stage 4.4 training boundary is corrected: the training simulation ends before the first holdout candle; holdout fills begin no earlier than the next 5m open.
 - Stage 4.5 is research-only. No Alpaca order/write API is called; Auto Entry remains OFF and Exit Manager remains DISARMED.
+
+
+## Stage 4.6 — extended-history walk-forward
+- GET `/api/backtest/stage4-6?timeframe=5Min&limit=30000&folds=3` requests up to 30,000 BTC/USD 5m bars through paginated Alpaca history.
+- Uses one frozen, predeclared baseline (relative volume 1.5, pullback tolerance 0.25 ATR, four completed 15m bars, stop 1.5 ATR, target 2R). No fold holdout is used to select parameters.
+- Divides the later half of the available history into 2–5 chronological, non-overlapping folds. Each fold starts with fresh simulated equity and closes any remaining position at that fold boundary.
+- Reports per-fold trade counts, net P/L, drawdown, and 0/5/10/20 bps slippage sensitivity.
+- More history and multiple folds improve diagnostics but do not guarantee representativeness or future profitability. Endpoint is read-only and does not call Alpaca order/write APIs.

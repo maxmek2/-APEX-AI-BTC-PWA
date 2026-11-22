@@ -11,10 +11,12 @@ try:
     from .stage43 import build_breakout_signals, run_breakout_backtest
     from .stage44 import run_stage44_report
     from .stage45 import run_stage45_report
+    from .stage46 import run_stage46_report
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
     from stage44 import run_stage44_report
     from stage45 import run_stage45_report
+    from stage46 import run_stage46_report
 
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
@@ -2121,6 +2123,52 @@ async def stage45_parameter_research(
                 "slippage_bps_per_side": slippage_bps,
                 "holdout_selection": "No parameter selection or ranking uses holdout metrics.",
             },
+        },
+        "automated_execution": False,
+        "order_submitted": False,
+        "alpaca_write_api_called": False,
+    }
+
+
+@app.get("/api/backtest/stage4-6")
+async def stage46_walk_forward(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(30000, ge=3000, le=30000),
+    folds: int = Query(3, ge=2, le=5),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+):
+    """Read-only Stage 4.6 fixed-parameter chronological walk-forward report."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 3000:
+        return {
+            "symbol": "BTC/USD", "status": "insufficient_data",
+            "bars_used": len(bars), "minimum_required": 3000,
+            "automated_execution": False, "order_submitted": False,
+            "alpaca_write_api_called": False,
+        }
+    try:
+        result = run_stage46_report(
+            bars, starting_equity, notional_usd, fee_rate, slippage_bps, folds
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {
+        "symbol": "BTC/USD", "timeframe": timeframe,
+        "status": "stage4_6_fixed_parameter_walk_forward",
+        "bars_used": len(bars), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "research": result,
+        "assumptions": {
+            "starting_equity_usd_per_fold": starting_equity,
+            "fixed_notional_usd": notional_usd,
+            "fee_per_side_percent": fee_rate * 100,
+            "slippage_bps_per_side": slippage_bps,
+            "each_fold_starts_with_fresh_equity": True,
+            "parameters_frozen_before_fold_evaluation": True,
         },
         "automated_execution": False,
         "order_submitted": False,
