@@ -1,5 +1,6 @@
 import os
 import math
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import httpx
@@ -1243,7 +1244,7 @@ async def paper_execution_status():
         "mode": "paper" if _paper_only_configured() else "blocked",
         "paper_host_verified": _paper_only_configured(),
         "auto_enabled": bool(_auto_entry.get("enabled", False)) if "_auto_entry" in globals() else False,
-        "order_submission_enabled": False,
+        "order_submission_enabled": bool(_auto_entry.get("enabled", False) and _paper_only_configured()) if "_auto_entry" in globals() else False,
         "protective_exit_support": False,
         "apex_managed_exits_enabled": PAPER_APEX_MANAGED_EXITS,
         "reason": "APEX-managed server-polled exits are enabled for Paper only; monitoring depends on Render uptime, network and fresh market data. This is not exchange-native protection.",
@@ -1835,7 +1836,7 @@ async def _auto_entry_tick():
             _auto_entry["last_signal_bar"] = bar_time
             # Persist the signal-time risk plan before placing the Paper order.
             # Use a deterministic client_order_id to help reconcile ambiguous submits.
-            client_order_id = "apexbtc-" + bar_dt.strftime("%Y%m%d%H%M") + "-" + str(abs(hash(bar_time)) % 100000000)
+            client_order_id = "apexbtc-" + hashlib.sha256(str(bar_time).encode("utf-8")).hexdigest()[:24]
             _auto_entry["pending_entry_plan"] = {
                 "symbol": "BTC/USD", "client_order_id": client_order_id,
                 "signal_bar_time": bar_time, "atr_14": volatility,
