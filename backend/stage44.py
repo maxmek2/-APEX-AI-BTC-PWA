@@ -5,7 +5,10 @@ Read-only research only; no broker/order dependencies.
 """
 from __future__ import annotations
 from statistics import median
-try:\n    from .stage43 import aggregate_complete_5m, atr_values, ema_values, run_breakout_backtest, _stamp\nexcept ImportError:  # uvicorn main:app with backend as app-dir\n    from stage43 import aggregate_complete_5m, atr_values, ema_values, run_breakout_backtest, _stamp
+try:
+    from .stage43 import aggregate_complete_5m, atr_values, ema_values, run_breakout_backtest, _stamp
+except ImportError:  # uvicorn main:app with backend as app-dir
+    from stage43 import aggregate_complete_5m, atr_values, ema_values, run_breakout_backtest, _stamp
 
 
 def build_stage44_signals(bars: list[dict], lookback: int = 20) -> dict:
