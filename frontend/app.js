@@ -126,6 +126,43 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage510(){
+ const out=$("stage510-result"),btn=$("run-stage510");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Measuring candidate gross edge, round-trip fee burden and break-even price movement on training data only…";
+ try{
+  const data=await get("/research/stage5-10/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Cost/edge diagnostics were not run.";return;}
+  const c=data.candidate||{},b=data.baseline||{},p=c.cost_edge||{},s=p.summary||{},bs=(b.cost_edge||{}).summary||{};
+  const grid='<div class="backtest-grid">'+
+   ledgerMetric("Training bars",data.training_bars??0)+
+   ledgerMetric("Candidate trades",s.trades??0)+
+   ledgerMetric("Candidate gross P&L",money(s.gross_pnl_usd),Number(s.gross_pnl_usd)>0)+
+   ledgerMetric("Candidate net P&L",money(s.net_pnl_usd),Number(s.net_pnl_usd)>0)+
+   ledgerMetric("Candidate net PF",s.net_profit_factor??"—")+
+   ledgerMetric("Gross winners",s.gross_winning_trades??0)+
+   ledgerMetric("Winners erased by fees",String(s.gross_winners_erased_by_fees??0)+" ("+String(s.gross_winners_erased_share_percent??0)+"%)")+
+   ledgerMetric("Median break-even move",s.median_break_even_price_move_bps==null?"—":String(s.median_break_even_price_move_bps)+" bps")+
+   ledgerMetric("Median fee burden",s.median_fee_cost_r==null?"—":String(s.median_fee_cost_r)+" R")+
+   ledgerMetric("Fee / positive gross",s.fee_to_gross_positive_pnl_percent==null?"—":String(s.fee_to_gross_positive_pnl_percent)+"%")+
+   ledgerMetric("Baseline net P&L",money(bs.net_pnl_usd),Number(bs.net_pnl_usd)>0)+
+   ledgerMetric("Candidate vs baseline",money(data.candidate_vs_baseline_net_pnl_usd),Number(data.candidate_vs_baseline_net_pnl_usd)>0)+'</div>';
+  const groupTable=(title,obj)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Group</th><th>Trades</th><th>Gross P&amp;L</th><th>Fees</th><th>Net P&amp;L</th><th>Net PF</th></tr></thead><tbody>'+
+   Object.entries(obj||{}).map(([k,v])=>'<tr><td>'+escapeLedger(k)+'</td><td>'+escapeLedger(v.trades)+'</td><td>'+money(v.gross_pnl_usd)+'</td><td>'+money(v.fees_usd)+'</td><td>'+money(v.net_pnl_usd)+'</td><td>'+escapeLedger(v.net_profit_factor??"—")+'</td></tr>').join("")+
+   '</tbody></table></div>';
+  const diagnosis='<h4>What the sample indicates</h4><ul>'+((data.diagnosis||[]).map(x=>'<li>'+escapeLedger(x)+'</li>').join(""))+'</ul>';
+  const ledger=(p.trade_ledger||[]).slice(-25).reverse().map(x=>'<tr><td>'+escapeLedger(x.entry_time)+'</td><td>'+escapeLedger(x.exit_reason)+'</td><td>'+money(x.gross_pnl_usd)+'</td><td>'+money(x.fees_usd)+'</td><td>'+money(x.net_pnl_usd)+'</td><td>'+escapeLedger(x.break_even_price_move_bps??"—")+'</td><td>'+escapeLedger(x.gross_outcome_class)+'</td></tr>').join("");
+  out.innerHTML='<strong>'+escapeLedger(data.status)+'</strong>'+grid+
+   groupTable("Candidate · gross outcome classes",p.gross_outcome_attribution)+
+   groupTable("Candidate · exit reasons",p.exit_reason_attribution)+
+   groupTable("Baseline · gross outcome classes",b.cost_edge?.gross_outcome_attribution)+
+   diagnosis+
+   '<h4>Latest candidate trades</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Gross</th><th>Fees</th><th>Net</th><th>Break-even bps</th><th>Gross class</th></tr></thead><tbody>'+ledger+'</tbody></table></div>'+
+   '<small class="muted">Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'. Break-even move covers estimated round-trip fees only; slippage is already embedded in fills and is not deducted twice. Fixed candidate/baseline only; no parameter search, broker API calls, order submission or automated execution.</small>';
+ }catch(e){out.textContent="Stage 5.10 diagnostics unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage59(){
  const out=$("stage59-result"),btn=$("run-stage59");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Recomputing every training trade's fills, gross P&L, fees, embedded slippage and R multiples…";
@@ -297,6 +334,7 @@ function setupControls(){
  const s57=$("run-stage57");if(s57)s57.addEventListener("click",runStage57);
  const s58=$("run-stage58");if(s58)s58.addEventListener("click",runStage58);
  const s59=$("run-stage59");if(s59)s59.addEventListener("click",runStage59);
+ const s510=$("run-stage510");if(s510)s510.addEventListener("click",runStage510);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
