@@ -1369,6 +1369,7 @@ _exit_manager = {
     "last_check": None,
     "last_event": "DISARMED",
     "close_order_id": None,
+    "close_reason": None,
 }
 _exit_task = None
 _exit_lock = asyncio.Lock()
@@ -1553,7 +1554,16 @@ async def start_exit_manager():
             btc = next((p for p in positions
                         if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
             if btc:
-                _exit_manager["last_event"] = "RESTART_RECOVERY_REQUIRED_EXISTING_BTC_POSITION"
+                saved_plan = _auto_entry.get("pending_entry_plan") or {}
+                if saved_plan.get("symbol") == "BTC/USD" and float(saved_plan.get("atr_14") or 0) > 0:
+                    # Auto-entry remains OFF after restart, but restore protection
+                    # for a broker-confirmed open position using its saved signal plan.
+                    _exit_manager["armed"] = True
+                    _exit_manager["position_key"] = None
+                    _exit_manager["last_event"] = "RESTART_RECOVERY_EXIT_MANAGER_REARMED_FROM_SAVED_PLAN"
+                    _persist_runtime_state()
+                else:
+                    _exit_manager["last_event"] = "RESTART_RECOVERY_BLOCKED_NO_SAVED_RISK_PLAN"
         except Exception as exc:
             _exit_manager["last_event"] = "STARTUP_RECONCILIATION_FAILED: " + str(exc)[:120]
     _exit_task = asyncio.create_task(_exit_manager_loop())
