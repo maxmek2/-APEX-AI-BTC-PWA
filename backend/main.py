@@ -29,6 +29,7 @@ try:
     from .stage515 import run_stage515_loss_concentration_investigation
     from .stage516 import run_stage516_trade_path_diagnostics
     from .stage517 import run_stage517_log_backtest
+    from .martingale_grid import build_signal as build_martingale_grid_signal, run_backtest as run_martingale_grid_backtest
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
     from stage44 import run_stage44_report, build_stage44_signals
@@ -51,6 +52,7 @@ except ImportError:  # uvicorn main:app with backend as app-dir
     from stage515 import run_stage515_loss_concentration_investigation
     from stage516 import run_stage516_trade_path_diagnostics
     from stage517 import run_stage517_log_backtest
+    from martingale_grid import build_signal as build_martingale_grid_signal, run_backtest as run_martingale_grid_backtest
 
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
@@ -3094,12 +3096,7 @@ async def stage517_log_return_backtest(
 
 
 
-# Frozen Martingale Grid candidate: read-only signal endpoint.
-try:
-    from .martingale_grid import build_signal as build_martingale_grid_signal
-except ImportError:
-    from martingale_grid import build_signal as build_martingale_grid_signal
-
+# Frozen Martingale Grid candidate: signal and historical simulation only.
 @app.get("/api/strategy/martingale-grid")
 async def martingale_grid_signal():
     """Read-only RSI14 + bearish-candle synthetic SHORT grid setup."""
@@ -3111,5 +3108,39 @@ async def martingale_grid_signal():
         "order_submitted": False,
         "alpaca_write_api_called": False,
         "automated_execution": False,
+    })
+    return result
+
+
+
+@app.get("/api/backtest/martingale-grid")
+async def backtest_martingale_grid(
+    limit: int = Query(10000, ge=100, le=30000),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    fee_rate: float = Query(0.0002, ge=0, le=0.02),
+    slippage_bps: float = Query(10, ge=0, le=500),
+    start_index: int = Query(30, ge=16, le=29999),
+):
+    """Historical synthetic SHORT grid replay; never submits or enables orders."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars("5Min", limit)
+    if len(bars) < 40:
+        return {
+            "status": "INSUFFICIENT_DATA", "bars_used": len(bars),
+            "requested_bars": limit, "order_submitted": False,
+            "alpaca_write_api_called": False, "automated_execution": False,
+        }
+    try:
+        result = run_martingale_grid_backtest(
+            bars, starting_equity=starting_equity, fee_rate=fee_rate,
+            slippage_bps=slippage_bps, start_index=min(start_index, len(bars)-2),
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    result.update({
+        "symbol": "BTC/USD", "timeframe": "5Min", "bars_used": len(bars),
+        "requested_bars": limit, "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "period": {"from": bars[0].get("t"), "to": bars[-1].get("t")},
+        "market_data_api_read": True,
     })
     return result
