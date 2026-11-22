@@ -584,6 +584,7 @@ function setupControls(){
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Dashboard":"Ⅱ Pause Dashboard";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
  $("stop-monitor").addEventListener("click",()=>{monitorStopped=true;monitorPaused=false;if(refreshTimer)clearInterval(refreshTimer);$("stop-monitor").textContent="■ Monitoring Stopped";$("pause-monitor").disabled=true;setStatus("MONITORING STOPPED");});
  $("view-report").addEventListener("click",()=>{location.hash="backtest-panel";runBacktest();});
+ const disableBar=$("disable-auto-entry-bar");if(disableBar)disableBar.addEventListener("click",()=>setAutoEntry(false));
  document.querySelectorAll(".tabs a").forEach(a=>a.addEventListener("click",()=>{document.querySelectorAll(".tabs a").forEach(x=>x.classList.remove("active"));a.classList.add("active");}));
 }
 setupControls();if("serviceWorker"in navigator)addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
