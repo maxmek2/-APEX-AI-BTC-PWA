@@ -113,7 +113,9 @@ def run_stage56_failure_report(
         reason = str(trade.get("exit_reason") or "UNKNOWN")
         by_reason.setdefault(reason, []).append(trade)
         entry_index = time_index.get(trade.get("entry_time"))
-        regime = regimes[entry_index] if entry_index is not None else "REGIME_UNAVAILABLE"
+        # Entry fills at this bar's open; use the prior signal bar's completed context.
+        signal_index = entry_index - 1 if entry_index is not None else None
+        regime = regimes[signal_index] if signal_index is not None and signal_index >= 0 else "REGIME_UNAVAILABLE"
         by_regime.setdefault(regime, []).append(trade)
         duration = _duration_minutes(trade)
         if duration is not None:
