@@ -283,7 +283,8 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
                          slippage_bps: float = 0.0, start_index: int = 21,
                          fast_period: int = 9, slow_period: int = 21,
                          stop_atr_multiple: float = 1.5,
-                         reward_risk: float = 2.0) -> dict:
+                         reward_risk: float = 2.0,
+                         entry_filter: list[bool] | None = None) -> dict:
     """Deterministic long-only close-signal/next-open-fill OHLC backtest.
 
     Fees apply to executed notional on entry and exit. Slippage is an adverse
@@ -298,6 +299,8 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
         raise ValueError("ATR stop multiple and reward/risk must be positive")
     if not isinstance(start_index, int) or start_index < slow_period or start_index >= len(bars) - 1:
         raise ValueError("start_index must be an integer from slow_period through len(bars)-2")
+    if entry_filter is not None and len(entry_filter) != len(bars):
+        raise ValueError("entry_filter length must match bars")
     if starting_equity <= 0 or notional_usd <= 0 or fee_rate < 0 or slippage_bps < 0:
         raise ValueError("Equity/notional must be positive; fee and slippage must be non-negative")
     slip = slippage_bps / 10000.0
@@ -336,7 +339,8 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
             continue
         a = volatility[i]
         if (fast[i] is None or slow[i] is None or a is None or a <= 0
-                or not (fast[i] > slow[i] and closes[i] > fast[i])):
+                or not (fast[i] > slow[i] and closes[i] > fast[i])
+                or (entry_filter is not None and not entry_filter[i])):
             continue
         entry_bar = bars[i+1]
         reference_entry = float(entry_bar["o"])
@@ -671,6 +675,205 @@ async def optimize_backtest(
         "automated_execution": False, "order_submitted": False,
         "alpaca_write_api_called": False,
     }
+
+
+
+
+def rsi_series(values: list[float], period: int = 14) -> list[float | None]:
+    """Wilder RSI; each output uses only values at or before its index."""
+    out: list[float | None] = [None] * len(values)
+    if len(values) <= period:
+        return out
+    gains = [max(values[i] - values[i-1], 0.0) for i in range(1, len(values))]
+    losses = [max(values[i-1] - values[i], 0.0) for i in range(1, len(values))]
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    def value(gain: float, loss: float) -> float:
+        if loss == 0:
+            return 100.0 if gain > 0 else 50.0
+        return 100.0 - 100.0 / (1.0 + gain / loss)
+    out[period] = value(avg_gain, avg_loss)
+    for i in range(period + 1, len(values)):
+        avg_gain = (avg_gain * (period - 1) + gains[i-1]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i-1]) / period
+        out[i] = value(avg_gain, avg_loss)
+    return out
+
+
+def higher_timeframe_bullish_by_index(
+    bars: list[dict], group_minutes: int
+) -> list[bool]:
+    """Map fully completed 15m/1h EMA9/21 trend candles onto each 5m close.
+
+    Only complete higher-timeframe buckets are eligible. The current partial
+    15m/1h candle is never used, preventing intrabar higher-timeframe leakage.
+    """
+    if group_minutes not in (15, 60):
+        raise ValueError("group_minutes must be 15 or 60")
+    seconds = group_minutes * 60
+    bucket_map: dict[int, dict] = {}
+    bucket_counts: dict[int, int] = {}
+    base_seconds = 300
+    stamps: list[datetime] = []
+    for bar in bars:
+        stamp = datetime.fromisoformat(str(bar["t"]).replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        stamps.append(stamp)
+        bucket = int(stamp.timestamp()) // seconds
+        item = bucket_map.get(bucket)
+        if item is None:
+            bucket_map[bucket] = {
+                "t": bar["t"], "o": float(bar["o"]), "h": float(bar["h"]),
+                "l": float(bar["l"]), "c": float(bar["c"]), "v": float(bar.get("v", 0)),
+            }
+            bucket_counts[bucket] = 1
+        else:
+            item["h"] = max(item["h"], float(bar["h"]))
+            item["l"] = min(item["l"], float(bar["l"]))
+            item["c"] = float(bar["c"])
+            item["v"] += float(bar.get("v", 0))
+            bucket_counts[bucket] += 1
+
+    complete = sorted(
+        (bucket, bucket_map[bucket]) for bucket in bucket_map
+        if bucket_counts[bucket] == group_minutes // 5
+    )
+    closes = [item["c"] for _, item in complete]
+    fast, slow = ema_series(closes, 9), ema_series(closes, 21)
+    bucket_to_position = {bucket: pos for pos, (bucket, _) in enumerate(complete)}
+    result = [False] * len(bars)
+    for i, stamp in enumerate(stamps):
+        close_ts = int(stamp.timestamp()) + base_seconds
+        last_complete_bucket = close_ts // seconds - 1
+        pos = bucket_to_position.get(last_complete_bucket)
+        if pos is not None and fast[pos] is not None and slow[pos] is not None:
+            result[i] = fast[pos] > slow[pos] and closes[pos] > fast[pos]
+        else:
+            # A previously completed bucket may be available even when the
+            # immediately preceding bucket is absent from the fetched sample.
+            eligible = [p for b, p in bucket_to_position.items() if b <= last_complete_bucket]
+            if eligible:
+                p = max(eligible)
+                if fast[p] is not None and slow[p] is not None:
+                    result[i] = fast[p] > slow[p] and closes[p] > fast[p]
+    return result
+
+
+def build_stage42_filters(bars: list[dict]) -> dict[str, list[bool]]:
+    closes = [float(bar["c"]) for bar in bars]
+    volatility = atr_series(bars, 14)
+    rsi = rsi_series(closes, 14)
+    mtf15 = higher_timeframe_bullish_by_index(bars, 15)
+    mtf60 = higher_timeframe_bullish_by_index(bars, 60)
+    mtf = [mtf15[i] and mtf60[i] for i in range(len(bars))]
+    rsi_ok = [value is not None and 50.0 <= value <= 70.0 for value in rsi]
+    # Explicit low-volatility/sideways exclusion; threshold is a research
+    # hypothesis, not a calibrated or universally valid BTC threshold.
+    atr_ok = [
+        volatility[i] is not None and closes[i] > 0
+        and volatility[i] / closes[i] >= 0.0004
+        for i in range(len(bars))
+    ]
+    return {
+        "baseline": [True] * len(bars),
+        "mtf_15m_1h": mtf,
+        "rsi_50_70": rsi_ok,
+        "atr_pct_min_0_04": atr_ok,
+        "combined_mtf_rsi_atr": [
+            mtf[i] and rsi_ok[i] and atr_ok[i] for i in range(len(bars))
+        ],
+    }
+
+
+@app.get("/api/backtest/stage4-2")
+async def stage42_filter_research(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(2000, ge=600, le=10000),
+    train_fraction: float = Query(0.60, gt=0.50, lt=0.80),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+):
+    """Compare predeclared MTF/RSI/ATR entry filters on train and untouched holdout."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 600:
+        return {
+            "symbol": "BTC/USD", "status": "insufficient_data",
+            "bars_used": len(bars), "minimum_required": 600,
+            "automated_execution": False, "order_submitted": False,
+            "alpaca_write_api_called": False,
+        }
+    split = int(len(bars) * train_fraction)
+    if split <= 60 or len(bars) - split < 50:
+        raise HTTPException(422, "Insufficient candles for training and untouched holdout")
+    filters = build_stage42_filters(bars)
+    reports = {}
+    for name, mask in filters.items():
+        train = run_ema_atr_backtest(
+            bars[:split + 1], starting_equity, notional_usd, fee_rate,
+            slippage_bps, start_index=50, entry_filter=mask[:split + 1],
+        )
+        holdout = run_ema_atr_backtest(
+            bars, starting_equity, notional_usd, fee_rate, slippage_bps,
+            start_index=split, entry_filter=mask,
+        )
+        first_fill = bars[split + 1].get("t")
+        test_entries = [trade for trade in holdout["trades"] if trade.get("entry_time")]
+        reports[name] = {
+            "training_metrics": train["metrics"],
+            "holdout_metrics": holdout["metrics"],
+            "holdout_trade_count": len(test_entries),
+            "holdout_entries_after_split": all(
+                trade["entry_time"] and trade["entry_time"] >= first_fill
+                for trade in test_entries
+            ),
+            "eligible_signal_bars_train": sum(mask[:split + 1]),
+            "eligible_signal_bars_holdout": sum(mask[split:]),
+        }
+    return {
+        "symbol": "BTC/USD", "timeframe": timeframe,
+        "status": "fixed_filter_comparison_train_and_untouched_holdout",
+        "validation": "RESEARCH_ONLY_NOT_CERTIFIED",
+        "bars_used": len(bars), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "split": {
+            "method": "chronological", "train_fraction": train_fraction,
+            "training_bars": split + 1, "holdout_bars": len(bars) - split - 1,
+            "train_to": bars[split].get("t"),
+            "first_possible_holdout_fill": bars[split + 1].get("t"),
+            "holdout_to": bars[-1].get("t"),
+        },
+        "filter_definitions": {
+            "baseline": "EMA9 > EMA21 and close > EMA9",
+            "mtf_15m_1h": "Baseline plus fully completed 15m and 1h EMA9 > EMA21 and close > EMA9",
+            "rsi_50_70": "Baseline plus Wilder RSI14 between 50 and 70 inclusive",
+            "atr_pct_min_0_04": "Baseline plus ATR14 / close >= 0.0004; experimental sideways-market exclusion",
+            "combined_mtf_rsi_atr": "Baseline plus all three filters",
+            "signal_execution": "Signal at 5m candle close; fill at next candle open; long-only",
+        },
+        "reports": reports,
+        "checks": {
+            "chronological_split": True,
+            "higher_timeframe_uses_completed_candles_only": True,
+            "holdout_filters_predeclared_not_optimized": True,
+            "holdout_entries_after_split": all(
+                item["holdout_entries_after_split"] for item in reports.values()
+            ),
+        },
+        "limitations": [
+            "The 15m/1h bars are aggregated from 5m OHLCV and require complete groups; missing 5m candles can reduce higher-timeframe coverage.",
+            "The ATR percentage threshold and RSI range are hypotheses, not calibrated settings.",
+            "The holdout contains a limited sample and is not independent future validation.",
+            "Fees and slippage are assumptions; OHLC ambiguous exits use stop-first; drawdown is closed-trade only.",
+            "This is an EMA/RSI/ATR multi-timeframe filter experiment, not a complete ICT implementation.",
+        ],
+        "automated_execution": False, "order_submitted": False,
+        "alpaca_write_api_called": False,
+    }
+
 
 
 @app.get("/api/backtest/rolling-oos")
