@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 try:
     from .stage43 import build_breakout_signals, run_breakout_backtest
+    from .stage44 import run_stage44_report
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
+    from stage44 import run_stage44_report
 
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
@@ -1001,6 +1003,84 @@ async def stage43_breakout_research(
         ],
         "automated_execution": False, "order_submitted": False,
         "alpaca_write_api_called": False,
+    }
+
+
+
+
+@app.get("/api/backtest/stage4-4")
+async def stage44_pullback_research(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(10000, ge=3000, le=10000),
+    train_fraction: float = Query(0.60, gt=0.50, lt=0.80),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+):
+    """Read-only Stage 4.4 relative-volume and post-breakout pullback comparison."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 3000:
+        return {"symbol": "BTC/USD", "status": "insufficient_data",
+                "bars_used": len(bars), "minimum_required": 3000,
+                "automated_execution": False, "order_submitted": False,
+                "alpaca_write_api_called": False}
+    try:
+        result = run_stage44_report(bars, train_fraction, starting_equity,
+                                    notional_usd, fee_rate, slippage_bps)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    split = result["split_index"]
+    return {
+        "symbol": "BTC/USD", "timeframe": timeframe,
+        "status": "stage4_4_fixed_variants_train_and_untouched_holdout",
+        "validation": "RESEARCH_ONLY_NOT_CERTIFIED",
+        "bars_used": len(bars), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "split": {"method": "chronological", "train_fraction": train_fraction,
+                  "training_bars": split + 1, "holdout_bars": len(bars) - split - 1,
+                  "train_to": bars[split].get("t"),
+                  "first_possible_holdout_fill": result["first_possible_holdout_fill"],
+                  "holdout_to": bars[-1].get("t")},
+        "strategy": {
+            "signal_timeframe": "15Min", "execution_timeframe": "5Min",
+            "entry": "Completed 15m signal, simulated fill at next 5m open",
+            "pullback": "After a completed 15m close breakout, within next four completed 15m candles price must touch within 0.25 ATR of breakout level and close back above that level",
+            "relative_volume": "Current completed 15m volume divided by median of prior 20 completed 15m volumes; threshold >= 1.5",
+            "hourly_context": "Latest completed 1h EMA20 > EMA50 and close > EMA20; diagnostic comparison to EMA50 > EMA200 retained",
+            "stop": "1.5 x completed 15m ATR14", "target": "2.0R",
+            "direction": "Long-only, spot-compatible"
+        },
+        "variant_definitions": {
+            "breakout_relvol_1p5": "15m Donchian breakout plus relative volume >= 1.5",
+            "breakout_pullback": "Breakout followed by level retest and reclaim within four 15m candles",
+            "breakout_pullback_relvol": "Pullback/reclaim plus relative volume >= 1.5 on confirmation candle",
+            "breakout_relvol_1p5_1h20_50": "Breakout plus relative volume and completed 1h EMA20/EMA50 bullish context"
+        },
+        "diagnostics": result["diagnostics"], "reports": result["reports"],
+        "checks": {"chronological_split": True, "fixed_predeclared_variants": True,
+                   "15m_signals_after_candle_close": True,
+                   "pullback_requires_later_completed_15m_candle": True,
+                   "1h_context_uses_completed_candles_only": True,
+                   "holdout_entries_after_split": all(x["holdout_entries_after_split"] for x in result["reports"].values()),
+                   "read_only": True},
+        "assumptions": {"starting_equity_usd": starting_equity,
+                        "fixed_notional_usd": notional_usd,
+                        "fee_per_side_percent": fee_rate * 100,
+                        "slippage_bps_per_side": slippage_bps,
+                        "ambiguous_ohlc_exit": "STOP_LOSS_FIRST",
+                        "drawdown": "Closed-trade equity drawdown; intratrade mark-to-market not modelled."},
+        "limitations": [
+            "A single chronological holdout is not independent future validation.",
+            "Relative volume is based on Alpaca venue-reported BTC/USD volume, not global BTC volume.",
+            "Breakout retest logic is a fixed research hypothesis, not a full ICT implementation.",
+            "Estimated fees/slippage and fixed notional are assumptions, not verified fills.",
+            "OHLC bars cannot reveal intrabar path; ambiguous stop/target candles use stop-first.",
+            "Long-only spot simulation; no short-side test."
+        ],
+        "automated_execution": False, "order_submitted": False,
+        "alpaca_write_api_called": False
     }
 
 
