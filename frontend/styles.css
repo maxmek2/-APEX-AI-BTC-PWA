@@ -527,3 +527,93 @@ h2,h3{letter-spacing:.015em}
  .drawer-action{font-size:9px}
  .research-content{padding:8px;gap:9px}
 }
+
+
+/* v30 — compact iPhone trading-terminal composition inspired by the approved mockup */
+@media(max-width:760px){
+  .app{padding:9px 8px 24px;gap:9px}
+  .brandbar{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:7px;align-items:center}
+  .brand{gap:8px;min-width:0}
+  .brand-mark{width:43px;height:43px;flex:0 0 43px;font-size:35px;border-radius:13px}
+  .brand-name{font-size:17px;line-height:1.05}
+  .brand-sub{font-size:9px}
+  .cloud-status{max-width:148px;min-width:0;padding:7px 8px;gap:6px}
+  .cloud-status strong{font-size:9px;white-space:nowrap}
+  .cloud-status small{font-size:8px;white-space:nowrap}
+  .gear{width:33px;height:33px}
+  .tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;overflow:visible}
+  .tabs a{min-width:0;padding:9px 2px;font-size:8px;text-align:center;white-space:nowrap}
+  .ticker{display:grid;grid-template-columns:34px minmax(0,.85fr) minmax(0,1.15fr) auto;gap:6px;padding:9px;border-radius:13px}
+  .coin{width:32px;height:32px;flex-basis:32px;font-size:22px}
+  .ticker-name{min-width:0}
+  .ticker-name strong{font-size:12px}
+  .ticker-name small{font-size:7px;white-space:nowrap}
+  .ticker-price{min-width:0}
+  .ticker-price strong{font-size:15px;white-space:nowrap}
+  .ticker-price small{font-size:7px;white-space:nowrap}
+  .time-select select{padding:7px 5px;font-size:9px}
+  .live-bars{display:none}
+  .main-grid{grid-template-columns:minmax(0,35%) minmax(0,65%);gap:7px;align-items:start}
+  .side-column{grid-template-columns:minmax(0,1fr);gap:7px}
+  .content-column{grid-template-columns:minmax(0,1fr);gap:7px}
+  .panel{padding:9px;border-radius:12px}
+  .section-head{gap:6px;padding-bottom:6px}
+  .section-head strong{font-size:10px}
+  .section-head small{font-size:8px}
+  .symbol-icon,.robot-icon{font-size:17px}
+  .equity-label{font-size:8px;margin-top:6px}
+  .equity-value{font-size:21px;margin:0 0 5px 5px}
+  .account-row,.setting-row{font-size:7px;padding:6px 0;gap:3px}
+  .account-row b,.setting-row b{font-size:7px;text-align:right}
+  .muted,.safety-note,.disclaimer{font-size:7px;line-height:1.4}
+  .auto-state{margin:7px 0;padding:7px;gap:4px}
+  .auto-state strong{font-size:8px}
+  .auto-state b{font-size:7px}
+  .toggle-off{font-size:14px}
+  .control-panel .setting-row{padding:6px 0}
+  .chart-panel{padding:8px}
+  .chart-title strong{font-size:11px}
+  .chart-title small,.chart-live{font-size:7px}
+  .chart{height:clamp(230px,64vw,285px);margin-top:7px}
+  .chart-legend{display:flex;flex-wrap:wrap;gap:5px;font-size:6px;padding-top:5px}
+  .chart-legend i{width:8px}
+  .signal-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+  .mini-stat{padding:7px 5px;gap:4px;border-radius:9px}
+  .mini-stat>span{font-size:14px}
+  .mini-stat small{font-size:7px}
+  .mini-stat b{font-size:8px}
+  .positions-panel h2,.signal-panel h2{font-size:10px;margin-bottom:5px}
+  .tag{font-size:7px;padding:3px 5px}
+  .position-row{padding:7px 0;gap:4px}
+  .position-main strong,.position-row small{font-size:7px}
+  .position-right{min-width:0}
+  .side-tag{font-size:6px}
+  .empty-state,.signal-panel p,.signal-panel small{font-size:7px}
+  .signal-panel h3{font-size:15px;margin:6px 0 3px}
+  .lower-grid{grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);gap:7px;align-items:stretch}
+  .progress-panel h2,.summary-panel h2{font-size:10px;margin-bottom:7px}
+  .progress-content{gap:5px;align-items:center}
+  .progress-ring{width:48px;height:48px;flex:0 0 48px;border-width:5px}
+  .progress-ring strong{font-size:10px}
+  .progress-ring small{font-size:6px}
+  .progress-content>div:last-child b{font-size:8px}
+  .progress-content p,.summary-panel p{font-size:6px;line-height:1.3}
+  .summary-cells{grid-template-columns:repeat(2,minmax(0,1fr));gap:2px}
+  .summary-cells>div{padding:4px 2px;border:0;border-bottom:1px solid var(--line);gap:3px}
+  .summary-cells small{font-size:6px}
+  .summary-cells b{font-size:9px}
+  .action-bar{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+  .action-bar button{font-size:8px;padding:10px 3px;min-width:0}
+  .dashboard-footer{font-size:7px}
+  .research-drawer>summary{padding:11px}
+  .research-drawer>summary strong{font-size:12px}
+  .research-drawer>summary small,.drawer-action{font-size:8px}
+}
+@media(max-width:390px){
+  .main-grid{grid-template-columns:minmax(0,36%) minmax(0,64%)}
+  .chart{height:225px}
+  .brand-name{font-size:15px}
+  .cloud-status{max-width:130px}
+  .ticker-price strong{font-size:13px}
+  .account-row,.setting-row,.account-row b,.setting-row b{font-size:6.5px}
+}
