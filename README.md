@@ -261,7 +261,7 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 
 ## Stage 5.3 — Strategy diagnostics and training-only optimization
 
-- `GET /api/research/stage5-3/run?timeframe=5Min&limit=10000` fetches historical BTC/USD market data and returns baseline training/holdout diagnostics plus a predeclared 72-candidate parameter grid.
+- `GET /api/research/stage5-3/run?timeframe=5Min&limit=10000` fetches historical BTC/USD market data and returns baseline training/holdout diagnostics plus a predeclared 108-candidate parameter grid.
 - The baseline diagnostics separate training and holdout exit reasons, volatility-regime outcomes, fee/slippage attribution, win rate, holding time and closed-trade drawdown.
 - Candidate parameters vary relative-volume threshold (1.2/1.5/1.8), pullback tolerance (0.15/0.25/0.40 ATR), confirmation window (2/4 bars), stop distance (1.0/1.5/2.0 ATR), and reward/risk (1.5/2.0).
 - Candidate ranking and qualification use training metrics only: at least 30 trades, positive net P/L, net profit factor above 1, and closed-trade drawdown no greater than 5% by default.
