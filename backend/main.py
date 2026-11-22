@@ -3092,3 +3092,24 @@ async def stage517_log_return_backtest(
     })
     return report
 
+
+
+# Frozen Martingale Grid candidate: read-only signal endpoint.
+try:
+    from .martingale_grid import build_signal as build_martingale_grid_signal
+except ImportError:
+    from martingale_grid import build_signal as build_martingale_grid_signal
+
+@app.get("/api/strategy/martingale-grid")
+async def martingale_grid_signal():
+    """Read-only RSI14 + bearish-candle synthetic SHORT grid setup."""
+    payload = await btc_bars("5Min", 100)
+    completed = _completed_bars(payload.get("bars", []), "5Min")
+    result = build_martingale_grid_signal(completed)
+    result.update({
+        "market_data_api_read": True,
+        "order_submitted": False,
+        "alpaca_write_api_called": False,
+        "automated_execution": False,
+    })
+    return result
