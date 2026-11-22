@@ -157,6 +157,28 @@ async function runStage516(){
  finally{btn.disabled=false;}
 }
 
+async function runStage517(){
+ const out=$("stage517-result"),btn=$("run-stage517");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Fetching BTC/USD history and running the fixed logarithmic-return strategy on training data only…";
+ try{
+  const data=await get("/research/stage5-17/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Log-return backtest was not run.";return;}
+  const m=data.metrics||{},d=data.strategy?.diagnostics||{};
+  const metrics=[
+   ["Training bars",data.training_bars],["Trades",m.trades],["Net P&L",m.net_pnl_usd],
+   ["Net profit factor",m.net_profit_factor],["Win rate (%)",m.win_rate_percent],
+   ["Max drawdown (%)",m.max_drawdown_percent],["Ending equity",m.ending_equity_usd],
+   ["Fees",m.estimated_fees_usd],["Slippage estimate",m.estimated_slippage_usd],
+   ["Signal checks",d.signal_checks],["Log signals",d.signals],["Momentum z threshold",d.minimum_momentum_z]
+  ];
+  const cards=metrics.map(([k,v])=>ledgerMetric(k,v??"—")).join("");
+  const trades=(data.trade_ledger||[]).slice().reverse().slice(0,30).map(t=>'<tr><td>'+escapeLedger(t.entry_time)+'</td><td>'+escapeLedger(t.exit_time)+'</td><td>'+escapeLedger(t.exit_reason)+'</td><td>'+escapeLedger(t.gross_pnl_usd)+'</td><td>'+escapeLedger(t.estimated_fees_usd)+'</td><td>'+escapeLedger(t.net_pnl_usd)+'</td></tr>').join("");
+  out.innerHTML='<strong>'+escapeLedger(data.status)+'</strong><p class="muted">BTC/USD · '+escapeLedger(data.bars_received)+' bars received · '+escapeLedger(data.training_bars)+' training bars · Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'</p><div class="backtest-grid">'+cards+'</div><h4>Fixed logarithmic rule</h4><p>12 × 5-minute cumulative log return divided by (48-bar log-return population standard deviation × √12) ≥ 0.5, plus positive 48-bar log-price trend. Signal at completed 15-minute closes; next 5-minute open fill. Stop 1.5 ATR, target 2R.</p><h4>Latest training trades · 30</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Reason</th><th>Gross</th><th>Fees</th><th>Net</th></tr></thead><tbody>'+trades+'</tbody></table></div><h4>Interpretation</h4><p class="muted">A positive training result would still be in-sample and not proof of an edge. A negative result rejects this fixed hypothesis for now; no parameter tuning is done. '+(data.limitations||[]).map(escapeLedger).join(" ")+'</p><small class="muted">Holdout sealed · No broker API calls · No order submitted · Auto Entry remains OFF.</small>';
+ }catch(e){out.textContent="Stage 5.17 backtest unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage515(){
  const out=$("stage515-result"),btn=$("run-stage515");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Replaying frozen candidate and baseline; accounting for loss concentration in training data only…";
@@ -534,6 +556,7 @@ function setupControls(){
  const s514=$("run-stage514");if(s514)s514.addEventListener("click",runStage514);
  const s515=$("run-stage515");if(s515)s515.addEventListener("click",runStage515);
  const s516=$("run-stage516");if(s516)s516.addEventListener("click",runStage516);
+ const s517=$("run-stage517");if(s517)s517.addEventListener("click",runStage517);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
