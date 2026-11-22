@@ -46,6 +46,7 @@ def audit_bar_integrity(bars: list[dict]) -> dict:
     gaps = [b - a for a, b in zip(sorted_times, sorted_times[1:]) if b - a > 300]
     missing_intervals = sum(max(0, (gap // 300) - 1) for gap in gaps)
     off_grid_intervals = sum(1 for gap in (b-a for a,b in zip(sorted_times, sorted_times[1:])) if gap % 300 != 0)
+    off_grid_timestamps = sum(1 for stamp in sorted_times if stamp % 300 != 0)
     expected_intervals = (
         ((sorted_times[-1] - sorted_times[0]) // 300 + 1) if len(sorted_times) >= 2 else len(sorted_times)
     )
@@ -54,7 +55,7 @@ def audit_bar_integrity(bars: list[dict]) -> dict:
         "timestamps_parse": malformed_timestamps == 0,
         "timestamps_unique": duplicate_timestamps == 0,
         "timestamps_chronological": out_of_order_pairs == 0,
-        "five_minute_grid_aligned": off_grid_intervals == 0,
+        "five_minute_grid_aligned": off_grid_intervals == 0 and off_grid_timestamps == 0,
         "ohlc_valid": invalid_ohlc == 0 and non_finite == 0,
         "volume_nonnegative": invalid_volume == 0,
     }
@@ -69,6 +70,7 @@ def audit_bar_integrity(bars: list[dict]) -> dict:
         "invalid_volume_bars": invalid_volume,
         "observed_gap_count": len(gaps),
         "off_grid_intervals": off_grid_intervals,
+        "off_grid_timestamps": off_grid_timestamps,
         "estimated_missing_5m_intervals": missing_intervals,
         "largest_gap_minutes": max(gaps) / 60 if gaps else 0,
         "observed_5m_coverage_percent": round(coverage, 4),
@@ -162,7 +164,7 @@ def run_stage55_report(
     integrity_ok = data_audit["structural_integrity_passed"]
     cost_ok = train_recon["reconciliation_passed"] and hold_recon["reconciliation_passed"]
     sufficient_history = len(bars) == requested_bars
-    status = "AUDIT_PASS_RESEARCH_ONLY" if integrity_ok and cost_ok and boundary_ok else "AUDIT_REVIEW_REQUIRED"
+    status = "AUDIT_PASS_RESEARCH_ONLY" if integrity_ok and cost_ok and boundary_ok and sufficient_history else "AUDIT_REVIEW_REQUIRED"
     return {
         "stage": "5.5", "status": status,
         "symbol": "BTC/USD", "timeframe": "5Min",
