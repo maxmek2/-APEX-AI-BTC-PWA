@@ -251,3 +251,9 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - GET `/api/research/safety-audit` checks the configured broker host allow-list, Paper Auto Entry state, and Exit Manager armed state.
 - It makes no broker API calls and changes no state. It does not verify broker positions, open orders, fills, secret quality, Render uptime, or deployment configuration.
 - The endpoint always reports live trading and live orders as unsupported/disabled. A safe local configuration is not certification for Paper or live execution.
+
+
+## Stage 5.0 — final readiness review
+- GET `/api/research/final-readiness` consolidates the local safety audit and existing Stage 6 readiness gates.
+- The endpoint is assessment-only and intentionally returns `NOT_READY` until extended-history research results, paper lifecycle evidence, protection, security/monitoring and independent authorization gates are completed.
+- It makes no broker API calls, changes no execution state, and cannot enable live trading or submit orders.
