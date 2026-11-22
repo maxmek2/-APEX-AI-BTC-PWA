@@ -308,3 +308,14 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - This endpoint reports a synthetic SHORT setup and grid reference levels. It does not create paper positions, submit broker orders, or enable Auto Entry.
 - Alpaca BTC/USD spot is long-only in this integration; therefore this SHORT Martingale Grid cannot be routed to Alpaca Paper as a real short strategy. It requires a separate short-capable venue or a dedicated synthetic paper ledger before any execution work.
 - This strategy is a preliminary research candidate, not certified profitable. Keep Auto Entry OFF and Exit Manager DISARMED.
+
+
+## Frozen RSI14 Martingale Grid — simulation engine
+- Read-only replay: GET /api/backtest/martingale-grid?limit=10000&starting_equity=100&fee_rate=0.0002&slippage_bps=10.
+- Entry: RSI14 > 55 and latest completed M5 candle bearish; fill at the next candle open.
+- Synthetic SHORT grid: first notional $2; add $4 at +0.5% adverse price; max 2 legs and $6 total exposure.
+- Basket target: 1% below quantity-weighted average entry. Basket stop targets -$5 net after estimated entry/exit fees and slippage. Maximum basket duration 48 hours.
+- Reports realized and unrealized P&L, marked equity, mark-to-market drawdown, maximum floating loss, exposure and closed basket ledger.
+- Ambiguous OHLC bars resolve stop-first; open baskets are marked to market at sample end, not silently closed.
+- Synthetic SHORT simulation, not an Alpaca Paper position. Alpaca BTC/USD spot is long-only in this integration. No broker write endpoint is called and no order is submitted.
+- Fees/slippage are assumptions; funding, spread, borrowing, liquidation, intrabar path and market depth are not modelled. Research only, not certified profitable.
