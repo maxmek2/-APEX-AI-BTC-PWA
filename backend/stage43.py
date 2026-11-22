@@ -139,6 +139,7 @@ def run_breakout_backtest(
     starting_equity: float = 100.0, notional_usd: float = 10.0,
     fee_rate: float = 0.0025, slippage_bps: float = 5.0,
     stop_atr_multiple: float = 1.5, reward_risk: float = 2.0,
+    start_index: int = 0,
 ) -> dict:
     """Long-only next-5m-open fill, conservative stop-first OHLC exits."""
     if len(signal_mask) != len(bars) or len(atr_by_base) != len(bars):
@@ -147,6 +148,8 @@ def run_breakout_backtest(
         raise ValueError("Invalid backtest input")
     if fee_rate < 0 or slippage_bps < 0 or slippage_bps >= 10000:
         raise ValueError("Invalid transaction costs")
+    if not isinstance(start_index, int) or start_index < 0 or start_index >= len(bars) - 1:
+        raise ValueError("start_index must be within the available bars")
     slip = slippage_bps / 10000
     position, trades = None, []
 
@@ -167,7 +170,7 @@ def run_breakout_backtest(
         })
         position = None
 
-    for i in range(len(bars) - 1):
+    for i in range(start_index, len(bars) - 1):
         candle = bars[i]
         if position is not None:
             op, hi, lo = float(candle["o"]), float(candle["h"]), float(candle["l"])
