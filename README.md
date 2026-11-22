@@ -238,3 +238,10 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - Uses a fixed seed for reproducibility. Bootstrap is not a forecast and assumes trade outcomes can be resampled; serial dependence, volatility clustering, regime changes, and unseen execution costs are not modelled.
 - If no closed trades exist, the endpoint returns no bootstrap distribution rather than inventing one.
 - Read-only research; no broker order/write calls.
+
+
+## Stage 4.8 — read-only shadow snapshot
+- GET `/api/research/shadow-snapshot?timeframe=5Min&limit=3000` fetches completed BTC/USD 5m candles and checks the frozen Stage 4.4 pullback + relative-volume setup.
+- Returns the latest completed candle, most recent observed setup, signal age/freshness, and diagnostics.
+- This is a one-shot snapshot, not a continuously running monitor or persistent signal log.
+- It does not access Paper account controls, create positions, submit orders, or arm the Exit Manager. `paper_order_enabled`, `order_submitted`, and `alpaca_write_api_called` remain false.
