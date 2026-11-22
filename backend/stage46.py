@@ -80,6 +80,7 @@ def run_stage46_report(
             "end_time": bars[end - 1].get("t"),
             "signal_count": sum(mask[start:end]),
             "metrics": result["metrics"],
+            "trade_net_pnl_usd": [trade["net_pnl_usd"] for trade in result["trades"]],
             "entries_inside_fold": all(x["entry_time"] >= first_fill for x in entries),
             "cost_sensitivity": costs,
         })
