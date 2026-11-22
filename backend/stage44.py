@@ -120,17 +120,27 @@ def run_stage44_report(bars: list[dict], train_fraction: float = 0.60,
         train = run_breakout_backtest(bars[:split], mask[:split], atrs[:split],
                                       starting_equity, notional_usd, fee_rate, slippage_bps)
         costs = []
+        selected_trades = []
         for bps in sorted({0, 5, 10, 20, slippage_bps}):
             test = run_breakout_backtest(bars, mask, atrs, starting_equity, notional_usd,
                                          fee_rate, bps, start_index=split)
             valid = all(t.get("entry_time") and t["entry_time"] >= first_fill for t in test["trades"])
             costs.append({"slippage_bps_per_side": bps, "metrics": test["metrics"],
                           "entries_after_split": valid})
+            if bps == slippage_bps:
+                selected_trades = test["trades"]
         selected = next(x for x in costs if x["slippage_bps_per_side"] == slippage_bps)
-        reports[name] = {"training_metrics": train["metrics"], "holdout_metrics": selected["metrics"],
-                         "holdout_entries_after_split": selected["entries_after_split"],
-                         "cost_sensitivity": costs,
-                         "training_signal_count": sum(mask[:split]),
-                         "holdout_signal_count": sum(mask[split:])}
+        reports[name] = {
+            "training_metrics": train["metrics"],
+            "holdout_metrics": selected["metrics"],
+            "holdout_entries_after_split": selected["entries_after_split"],
+            "cost_sensitivity": costs,
+            "training_signal_count": sum(mask[:split]),
+            "holdout_signal_count": sum(mask[split:]),
+            # Bounded by the finite signal count; these are simulated OHLC trades,
+            # never broker fills or executable orders.
+            "training_trades": train["trades"],
+            "holdout_trades": selected_trades,
+        }
     return {"reports": reports, "diagnostics": built["diagnostics"],
             "split_index": split, "first_possible_holdout_fill": first_fill}
