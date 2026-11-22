@@ -1409,7 +1409,8 @@ async def _exit_manager_tick():
             _exit_manager["last_event"] = "INVALID_POSITION_DATA"
             return
 
-        position_key = f'{btc.get("symbol")}:{btc.get("qty")}:{btc.get("avg_entry_price")}'
+        # Position identity excludes quantity: partial fills must not recalculate risk levels.
+        position_key = f'{btc.get("symbol")}:{btc.get("avg_entry_price")}'
         if _exit_manager["position_key"] != position_key:
             bars_data = await get_json(
                 f"{DATA}/v1beta3/crypto/us/bars",
@@ -1421,13 +1422,21 @@ async def _exit_manager_tick():
                 _exit_manager["last_event"] = "WAITING_FOR_VALID_ATR"
                 return
             distance = volatility * 1.5
+            stop_price = round(entry - distance, 2)
+            target_price = round(entry + distance * 2.0, 2)
+            if stop_price <= 0 or not (stop_price < entry < target_price):
+                _exit_manager["last_event"] = "BLOCKED_INVALID_PROTECTIVE_LEVELS"
+                _exit_manager["armed"] = False
+                return
             _exit_manager.update({
                 "position_key": position_key,
                 "entry_price": entry,
-                "stop_price": round(entry - distance, 2),
-                "target_price": round(entry + distance * 2.0, 2),
+                "stop_price": stop_price,
+                "target_price": target_price,
                 "last_event": "PROTECTIVE_LEVELS_INITIALIZED"
             })
+            # Persist risk levels before monitoring price. Restart still forces disarm.
+            _persist_runtime_state()
 
         trade = await get_json(
             f"{DATA}/v1beta3/crypto/us/latest/trades",
@@ -1530,9 +1539,17 @@ async def stop_exit_manager():
 
 @app.get("/api/paper/exit-manager")
 async def paper_exit_manager_status():
+    last_check = _exit_manager.get("last_check")
+    try:
+        last_check_age = max(0.0, (datetime.now(timezone.utc) - datetime.fromisoformat(last_check)).total_seconds()) if last_check else None
+    except (TypeError, ValueError):
+        last_check_age = None
     return {
         "mode": "paper" if _paper_only_configured() else "blocked",
         "symbol": "BTC/USD",
+        "monitor_interval_seconds": 5,
+        "last_check_age_seconds": round(last_check_age, 1) if last_check_age is not None else None,
+        "monitor_fresh": bool(_exit_manager.get("armed") and last_check_age is not None and last_check_age <= 15),
         "armed": _exit_manager["armed"],
         "opens_positions": False,
         "poll_interval_seconds": 5,
