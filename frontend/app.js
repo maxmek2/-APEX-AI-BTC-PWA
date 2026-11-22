@@ -126,6 +126,43 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage515(){
+ const out=$("stage515-result"),btn=$("run-stage515");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Replaying frozen candidate and baseline; accounting for loss concentration in training data only…";
+ try{
+  const data=await get("/research/stage5-15/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Investigation was not run.";return;}
+  const table=(title,rows,keys)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr>'+keys.map(k=>'<th>'+k[1]+'</th>').join("")+'</tr></thead><tbody>'+
+   (rows||[]).map(x=>'<tr>'+keys.map(k=>'<td>'+escapeLedger(k[2](x)??"—")+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>';
+  const render=(title,obj)=>'<h4>'+title+'</h4><div class="backtest-grid">'+
+   ledgerMetric("Trades",obj.summary?.trades??0)+ledgerMetric("Stop-loss exits",obj.summary?.stop_loss_trades??0)+
+   ledgerMetric("Gross P&amp;L",money(obj.summary?.gross_pnl_usd),Number(obj.summary?.gross_pnl_usd)>0)+
+   ledgerMetric("Estimated fees",money(obj.summary?.fees_usd))+
+   ledgerMetric("Net P&amp;L",money(obj.summary?.net_pnl_usd),Number(obj.summary?.net_pnl_usd)>0)+
+   ledgerMetric("Winners erased by fees",obj.summary?.winners_erased_by_fees??0)+
+   ledgerMetric("Fee / gross losses",obj.summary?.fees_as_percent_of_gross_losses==null?"—":obj.summary.fees_as_percent_of_gross_losses+"%")+
+   ledgerMetric("Top-group gross-loss share",obj.summary?.gross_loss_concentration_top_group_percent+"%")+'</div>'+
+   table("Entry-quality attribution",obj.entry_quality_attribution,[
+    ["group","Group",x=>x.group],["trades","Trades",x=>x.trades],["stops","Stops",x=>x.stop_loss_trades],
+    ["gross","Gross P&amp;L",x=>money(x.gross_pnl_usd)],["fees","Fees",x=>money(x.fees_usd)],
+    ["net","Net P&amp;L",x=>money(x.net_pnl_usd)],["pf","Net PF",x=>x.net_profit_factor]])+
+   table("Exit-reason attribution",obj.exit_reason_attribution,[
+    ["group","Exit",x=>x.group],["trades","Trades",x=>x.trades],["gross","Gross P&amp;L",x=>money(x.gross_pnl_usd)],
+    ["fees","Fees",x=>money(x.fees_usd)],["net","Net P&amp;L",x=>money(x.net_pnl_usd)],["pf","Net PF",x=>x.net_profit_factor]])+
+   table("Entry quality × exit reason",obj.entry_quality_by_exit_reason,[
+    ["quality","Entry group",x=>x.entry_quality_group],["exit","Exit",x=>x.exit_reason],
+    ["trades","Trades",x=>x.trades],["net","Net P&amp;L",x=>money(x.net_pnl_usd)],["fees","Fees",x=>money(x.fees_usd)]])+
+   '<h4>Largest negative entry groups</h4><ul>'+((obj.largest_negative_groups||[]).map(x=>'<li>'+escapeLedger(x.group)+': '+money(x.net_pnl_usd)+' across '+escapeLedger(x.trades)+' trades</li>').join(""))+'</ul>';
+  out.innerHTML='<strong>'+escapeLedger(data.status)+'</strong><p class="muted">Training bars: '+escapeLedger(data.training_bars)+' · Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'</p>'+
+   render("Candidate · frozen Stage 5.7",data.candidate?.investigation||{})+
+   render("Baseline · frozen Stage 4.4",data.baseline?.investigation||{})+
+   '<h4>Findings to investigate</h4><ul>'+((data.findings||[]).map(x=>'<li>'+escapeLedger(x)+'</li>').join(""))+'</ul>'+
+   '<small class="muted">Accounting concentrations are descriptive, not causal. Fee/slippage assumptions are not verified broker fills. No parameter search, strategy change, promotion, broker API write, order submission or automated execution.</small>';
+ }catch(e){out.textContent="Stage 5.15 investigation unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage514(){
  const out=$("stage514-result"),btn=$("run-stage514");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Applying fixed research evidence gates to frozen candidate and baseline using training data only…";
@@ -464,6 +501,7 @@ function setupControls(){
  const s512=$("run-stage512");if(s512)s512.addEventListener("click",runStage512);
  const s513=$("run-stage513");if(s513)s513.addEventListener("click",runStage513);
  const s514=$("run-stage514");if(s514)s514.addEventListener("click",runStage514);
+ const s515=$("run-stage515");if(s515)s515.addEventListener("click",runStage515);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
