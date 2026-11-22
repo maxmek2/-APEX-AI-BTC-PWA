@@ -126,6 +126,46 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage511(){
+ const out=$("stage511-result"),btn=$("run-stage511");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Inspecting stop-loss excursions and pre-entry market context on training data only…";
+ try{
+  const data=await get("/research/stage5-11/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Stop-loss diagnostics were not run.";return;}
+  const c=data.candidate||{},b=data.baseline||{},d=c.diagnostics||{},s=d.summary||{},bs=(b.diagnostics||{}).summary||{};
+  const grid='<div class="backtest-grid">'+
+   ledgerMetric("Training bars",data.training_bars??0)+
+   ledgerMetric("Candidate trades",s.trades??0)+
+   ledgerMetric("Stop-loss trades",s.stop_loss_trades??0)+
+   ledgerMetric("Stop-loss share",String(s.stop_loss_share_percent??0)+"%")+
+   ledgerMetric("Early adverse stops (≤3 bars)",s.early_adverse_stop_loss_within_3_bars??0)+
+   ledgerMetric("Stops later recovering above entry",s.stop_loss_recovered_above_entry_within_3_6_or_12_bars??0)+
+   ledgerMetric("Median stop-loss MAE",s.median_stop_loss_mae_r==null?"—":String(s.median_stop_loss_mae_r)+" R")+
+   ledgerMetric("Median MFE",s.median_mfe_r==null?"—":String(s.median_mfe_r)+" R")+
+   ledgerMetric("Median MAE",s.median_mae_r==null?"—":String(s.median_mae_r)+" R")+
+   ledgerMetric("Candidate net P&L",money(c.metrics?.net_pnl_usd),Number(c.metrics?.net_pnl_usd)>0)+
+   ledgerMetric("Baseline stop-loss share",String(bs.stop_loss_share_percent??0)+"%")+
+   ledgerMetric("Baseline net P&L",money(b.metrics?.net_pnl_usd),Number(b.metrics?.net_pnl_usd)>0)+'</div>';
+  const groupTable=(title,obj)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Pre-entry regime</th><th>Trades</th><th>Stops</th><th>Win %</th><th>Net P&amp;L</th><th>Median MFE R</th><th>Median MAE R</th></tr></thead><tbody>'+
+   Object.entries(obj||{}).map(([k,v])=>'<tr><td>'+escapeLedger(k)+'</td><td>'+escapeLedger(v.trades)+'</td><td>'+escapeLedger(v.stop_loss_trades)+'</td><td>'+escapeLedger(v.win_rate_percent)+'%</td><td>'+money(v.net_pnl_usd)+'</td><td>'+escapeLedger(v.median_mfe_r??"—")+'</td><td>'+escapeLedger(v.median_mae_r??"—")+'</td></tr>').join("")+
+   '</tbody></table></div>';
+  const reasons='<h4>Candidate exit reasons</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Exit</th><th>Trades</th><th>Net P&amp;L</th><th>Median MFE R</th><th>Median MAE R</th><th>Median bars</th></tr></thead><tbody>'+
+   Object.entries(d.exit_reason_attribution||{}).map(([k,v])=>'<tr><td>'+escapeLedger(k)+'</td><td>'+escapeLedger(v.trades)+'</td><td>'+money(v.net_pnl_usd)+'</td><td>'+escapeLedger(v.median_mfe_r??"—")+'</td><td>'+escapeLedger(v.median_mae_r??"—")+'</td><td>'+escapeLedger(v.median_bars_held??"—")+'</td></tr>').join("")+
+   '</tbody></table></div>';
+  const ledger=(d.trade_ledger||[]).slice(-30).reverse().map(x=>'<tr><td>'+escapeLedger(x.entry_time)+'</td><td>'+escapeLedger(x.exit_reason)+'</td><td>'+escapeLedger(x.hourly_trend_before_entry)+' / '+escapeLedger(x.volatility_before_entry)+'</td><td>'+escapeLedger(x.momentum_bucket_before_entry)+'</td><td>'+escapeLedger(x.bars_held)+'</td><td>'+escapeLedger(x.mfe_r??"—")+'</td><td>'+escapeLedger(x.mae_r??"—")+'</td><td>'+money(x.net_pnl_usd)+'</td></tr>').join("");
+  const diagnosis='<h4>Findings to investigate</h4><ul>'+((data.diagnosis||[]).map(x=>'<li>'+escapeLedger(x)+'</li>').join(""))+'</ul>';
+  out.innerHTML='<strong>'+escapeLedger(data.status)+'</strong>'+grid+
+   groupTable("Candidate · pre-entry hourly trend / volatility",d.entry_regime_attribution)+
+   reasons+
+   groupTable("Baseline · pre-entry hourly trend / volatility",b.diagnostics?.entry_regime_attribution)+
+   diagnosis+
+   '<h4>Latest candidate trade diagnostics</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Trend / vol</th><th>Momentum</th><th>Bars</th><th>MFE R</th><th>MAE R</th><th>Net</th></tr></thead><tbody>'+ledger+'</tbody></table></div>'+
+   '<small class="muted">Holdout: '+escapeLedger(data.holdout?.status||"SEALED_NOT_ACCESSED")+'. Entry features use completed pre-entry bars. MFE/MAE and post-stop recovery are descriptive outcomes, not causal proof. Stop/target settings remain frozen. No optimization, broker API calls, order submission or automated execution.</small>';
+ }catch(e){out.textContent="Stage 5.11 diagnostics unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage510(){
  const out=$("stage510-result"),btn=$("run-stage510");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Measuring candidate gross edge, round-trip fee burden and break-even price movement on training data only…";
@@ -335,6 +375,7 @@ function setupControls(){
  const s58=$("run-stage58");if(s58)s58.addEventListener("click",runStage58);
  const s59=$("run-stage59");if(s59)s59.addEventListener("click",runStage59);
  const s510=$("run-stage510");if(s510)s510.addEventListener("click",runStage510);
+ const s511=$("run-stage511");if(s511)s511.addEventListener("click",runStage511);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
