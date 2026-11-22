@@ -6,8 +6,6 @@ simulation. Results are diagnostics, not a profitability certificate.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from statistics import median
 
 try:
     from .stage43 import aggregate_complete_5m, atr_values, ema_values, run_breakout_backtest, _stamp
@@ -123,7 +121,7 @@ def _summarize(trades: list[dict], starting_equity: float, notional_usd: float) 
     }
 
 
-def _regime_trades(trades: list[dict], bars: list[dict], regimes: list[str]) -> dict:
+def _regime_trades(trades: list[dict], bars: list[dict], regimes: list[str], starting_equity: float, notional_usd: float) -> dict:
     by_time = {str(bar.get("t")): i for i, bar in enumerate(bars) if bar.get("t")}
     groups = {}
     for trade in trades:
@@ -131,7 +129,7 @@ def _regime_trades(trades: list[dict], bars: list[dict], regimes: list[str]) -> 
         signal_idx = idx - 1 if idx is not None else None
         key = regimes[signal_idx] if signal_idx is not None and signal_idx >= 0 else "UNCLASSIFIED"
         groups.setdefault(key, []).append(trade)
-    return {key: _summarize(group, 100.0, 10.0) for key, group in sorted(groups.items())}
+    return {key: _summarize(group, starting_equity, notional_usd) for key, group in sorted(groups.items())}
 
 
 def _segment_gate(metrics: dict, minimum_trades: int, max_drawdown: float) -> bool:
@@ -187,8 +185,8 @@ def run_stage54_report(
     # completed higher-timeframe candles and are attached at signal time.
     train_regimes = regime["regime_by_base"][:split]
     hold_regimes = regime["regime_by_base"]
-    train_regime_metrics = _regime_trades(train_result["trades"], bars[:split], train_regimes)
-    hold_regime_metrics = _regime_trades(hold_trades, bars, hold_regimes)
+    train_regime_metrics = _regime_trades(train_result["trades"], bars[:split], train_regimes, starting_equity, notional_usd)
+    hold_regime_metrics = _regime_trades(hold_trades, bars, hold_regimes, starting_equity, notional_usd)
 
     # Later, non-overlapping chronological folds are all fixed-parameter tests.
     # Each fold starts flat. No fold is used to tune or choose parameters.
@@ -205,8 +203,9 @@ def run_stage54_report(
         fold_mask = [False] * len(bars)
         for i in range(start, end):
             fold_mask[i] = bool(mask[i])
+        fold_bars = bars[:end]
         result = run_breakout_backtest(
-            bars, fold_mask, atrs, starting_equity, notional_usd,
+            fold_bars, fold_mask[:end], atrs[:end], starting_equity, notional_usd,
             fee_rate, slippage_bps, start_index=start,
         )
         trades = result["trades"]
@@ -215,7 +214,7 @@ def run_stage54_report(
             "fold": k + 1, "from": bars[start].get("t"), "to": bars[end - 1].get("t"),
             "metrics": _summarize(trades, starting_equity, notional_usd),
             "entries_after_fold_start": valid,
-            "regime_attribution": _regime_trades(trades, bars, regime["regime_by_base"]),
+            "regime_attribution": _regime_trades(trades, bars, regime["regime_by_base"], starting_equity, notional_usd),
         })
 
     min_hold_trades = minimum_trades_per_fold * folds
@@ -271,6 +270,7 @@ def run_stage54_report(
             "entry": "Completed 15m signal; next 5m open.",
             "higher_timeframe": "Latest fully completed hourly EMA20/EMA50 trend; no live-hour use.",
             "folds": "Non-overlapping chronological holdout folds; each starts flat; no fold selection.",
+            "fold_boundary_policy": "Signals before each fold are masked; simulation ends at the fold final bar; open positions are closed at the boundary; no position carries forward.",
         },
         "training": {
             "metrics": train_metrics,
