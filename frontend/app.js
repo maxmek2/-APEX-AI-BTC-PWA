@@ -126,6 +126,32 @@ async function runStage56(){
  finally{btn.disabled=false;}
 }
 
+async function runStage57(){
+ const out=$("stage57-result"),btn=$("run-stage57");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Fetching BTC/USD M5 history; testing one fixed trend-gated candidate on training data only…";
+ try{
+  const data=await get("/research/stage5-7/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60&minimum_training_trades=30");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  if(data.status==="DATA_INTEGRITY_FAILED"){out.textContent="Data integrity failed. Candidate analysis was not run.";return;}
+  const c=data.candidate||{},base=c.baseline_training_metrics||{},m=c.candidate_training_metrics||{},d=c.diagnostics||{};
+  const grid='<div class="backtest-grid">'+
+   ledgerMetric("Training bars",data.training_bars??0)+
+   ledgerMetric("Baseline trades",base.trades??0)+
+   ledgerMetric("Candidate trades",m.trades??0)+
+   ledgerMetric("Candidate signals",d.candidate_signals??0)+
+   ledgerMetric("Baseline net P&L",money(base.net_pnl_usd),Number(base.net_pnl_usd)>0)+
+   ledgerMetric("Candidate net P&L",money(m.net_pnl_usd),Number(m.net_pnl_usd)>0)+
+   ledgerMetric("Candidate net PF",m.net_profit_factor??"—")+
+   ledgerMetric("Win rate",String(m.win_rate_percent??0)+"%")+
+   ledgerMetric("Trade count change",c.trade_count_change??0)+
+   ledgerMetric("Training gate",c.training_gate_passed?"PASS":"FAIL")+'</div>';
+  out.innerHTML='<strong>'+escapeLedger(data.status)+'</strong>'+grid+
+   '<p>'+escapeLedger(data.next_step||"")+'</p>'+
+   '<small class="muted">Filter: latest completed 1h EMA50 &gt; EMA200 and close &gt; EMA50. Holdout: '+escapeLedger(data.holdout?.status||"SEALED")+'. No holdout outcome evaluation, parameter search, account/order/position calls, order submission, or automated execution.</small>';
+ }catch(e){out.textContent="Stage 5.7 candidate test unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage55(){
  const out=$("stage55-result"),btn=$("run-stage55");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Fetching up to 30,000 BTC/USD M5 candles and auditing data integrity and simulated costs…";
