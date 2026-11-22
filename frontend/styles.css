@@ -383,3 +383,118 @@
 
 /* Stage 5.2 read-only trade ledger */
 .ledger-variant{border-top:1px solid var(--line);padding:14px 0;display:grid;gap:9px}.ledger-variant:first-of-type{margin-top:10px}.ledger-details{border:1px solid var(--line);border-radius:8px;padding:9px;margin-top:5px}.ledger-details summary{cursor:pointer;font-weight:650;color:var(--text)}.ledger-table-wrap{overflow-x:auto;margin-top:9px}.ledger-table{border-collapse:collapse;width:100%;min-width:760px;font-size:11px}.ledger-table th,.ledger-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}.ledger-table th{color:var(--muted);font-weight:600}.ledger-table td{font-variant-numeric:tabular-nums}.ledger-variant .tag{font-size:10px}
+
+
+/* v28 — APEX premium responsive dashboard polish */
+:root{
+  --bg:#050b16;--panel:#0c1728;--line:#223650;--text:#edf5ff;
+  --muted:#91a4bc;--green:#35e0aa;--red:#ff687d;
+}
+body{
+  background:
+    radial-gradient(ellipse at 50% -18%,rgba(37,105,174,.22),transparent 48%),
+    linear-gradient(180deg,#071120 0%,#050b16 72%);
+  letter-spacing:.01em;
+}
+.app{gap:16px}
+.brandbar{padding:4px 2px}
+.brand-mark{
+  border:1px solid rgba(89,166,255,.35);
+  box-shadow:0 0 28px rgba(44,132,255,.18),inset 0 0 18px rgba(63,119,255,.14);
+}
+.brand-name{letter-spacing:.08em}
+.cloud-status{box-shadow:0 0 22px rgba(32,217,149,.08)}
+.tabs a{transition:background .18s ease,border-color .18s ease,transform .18s ease}
+.tabs a:hover{border-color:#4b82bd;background:#142944}
+.panel{
+  background:linear-gradient(150deg,rgba(17,32,52,.97),rgba(8,18,32,.98));
+  border-color:rgba(92,125,163,.25);
+  box-shadow:0 12px 30px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.025);
+}
+.chart-panel{border-color:rgba(72,148,222,.34)}
+.chart{background:linear-gradient(180deg,#08182a,#06111f);border-color:#29445f}
+.mini-stat{background:linear-gradient(145deg,#10223a,#0b1728)}
+.small-action,.action-bar button{
+  transition:transform .15s ease,border-color .15s ease,background .15s ease;
+}
+.small-action:active,.action-bar button:active{transform:translateY(1px)}
+.small-action:hover{border-color:#64a7e9;background:#1a3554}
+#auto-entry-enable{background:#2b251a;border-color:#987443}
+#auto-entry-disable{background:#321e27;border-color:#92505e}
+.tag{letter-spacing:.04em}
+h2,h3{letter-spacing:.015em}
+.account-row b,.setting-row b,.summary-cells b,.ticker-price strong{
+  font-variant-numeric:tabular-nums;
+}
+@media(max-width:760px){
+  .app{padding:12px 11px 28px;gap:11px}
+  .brandbar{min-height:58px}
+  .brand-mark{width:45px;height:45px;font-size:37px}
+  .brand-name{font-size:18px}
+  .brand-sub{font-size:10px}
+  .cloud-status{max-width:180px;padding:7px 9px}
+  .cloud-status strong{font-size:9px}
+  .cloud-status small{font-size:8px}
+  .tabs{display:flex;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:3px}
+  .tabs a{flex:0 0 auto;min-width:74px;padding:10px 11px;font-size:10px;scroll-snap-align:start}
+  .ticker{padding:11px;gap:9px;border-radius:14px}
+  .coin{width:36px;height:36px;flex-basis:36px}
+  .ticker-name{min-width:70px}
+  .ticker-name strong{font-size:14px}
+  .ticker-name small{font-size:8px}
+  .ticker-price strong{font-size:18px}
+  .ticker-price small{font-size:8px}
+  .time-select select{padding:8px 7px;font-size:10px}
+  .main-grid{grid-template-columns:minmax(0,1fr);gap:10px}
+  .side-column{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .content-column{grid-template-columns:minmax(0,1fr);gap:10px}
+  .panel{padding:12px;border-radius:14px}
+  .section-head strong{font-size:13px}
+  .section-head small{font-size:9px}
+  .equity-value{font-size:25px}
+  .account-row,.setting-row{font-size:10px;padding:8px 0}
+  .account-row b,.setting-row b{font-size:10px}
+  .safety-note,.disclaimer{font-size:9px;line-height:1.5}
+  .chart-panel{padding:12px}
+  .chart-title strong{font-size:15px}
+  .chart-title small{font-size:10px}
+  .chart{height:clamp(260px,70vw,340px);margin-top:10px}
+  .chart-legend{font-size:9px;gap:10px}
+  .signal-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .mini-stat{padding:10px;border-radius:11px}
+  .mini-stat small{font-size:9px}
+  .mini-stat b{font-size:11px}
+  .positions-panel h2,.signal-panel h2{font-size:14px}
+  .position-row{font-size:10px;padding:10px 0}
+  .position-row small{font-size:9px}
+  .empty-state,.signal-panel p,.signal-panel small{font-size:10px}
+  .signal-panel h3{font-size:24px}
+  .lower-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .progress-panel h2,.summary-panel h2{font-size:13px}
+  .summary-cells{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .summary-cells>div{border:0;border-bottom:1px solid var(--line);padding:7px 4px}
+  .summary-cells small{font-size:9px}
+  .summary-cells b{font-size:14px}
+  .progress-content p,.summary-panel p{font-size:9px}
+  .small-action{font-size:10px;padding:9px 10px}
+  .backtest-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .backtest-grid>div{padding:9px}
+  .backtest-grid small{font-size:9px}
+  .backtest-grid b{font-size:13px}
+  .check-row,.mtf-row{font-size:10px;padding:10px 0}
+  .dashboard-footer,footer{font-size:9px}
+}
+@media(max-width:420px){
+  .side-column{grid-template-columns:1fr}
+  .account-panel,.control-panel{padding:12px}
+  .account-row,.setting-row{font-size:10px}
+  .account-row b,.setting-row b{font-size:10px}
+  .cloud-status{max-width:145px}
+  .ticker-name{min-width:58px}
+  .ticker-price strong{font-size:16px}
+  .chart{height:250px}
+  .lower-grid{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
+}
