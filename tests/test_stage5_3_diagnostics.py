@@ -23,7 +23,7 @@ def _bars(count=3000):
 def test_stage53_returns_train_only_grid_and_diagnostics():
     report = run_stage53_report(_bars(), minimum_training_trades=30)
     assert report["stage"] == "5.3"
-    assert report["optimization"]["grid_size"] == 72
+    assert report["optimization"]["grid_size"] == 108
     assert report["optimization"]["selection_used_holdout"] is False
     assert len(report["optimization"]["top_training_candidates"]) == 10
     assert "exit_reason_breakdown" in report["baseline_diagnostics"]["training"]
