@@ -177,7 +177,7 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 
 ## Stage 4 — Rolling out-of-sample robustness research
 
-- `GET /api/backtest/rolling-oos?timeframe=5Min&limit=1000&windows=4` runs the unchanged EMA9/EMA21 + ATR14 rules over sequential, non-overlapping out-of-sample windows.
+- `GET /api/backtest/stage4-3?timeframe=5Min&limit=10000` compares a 15m Donchian-20 close breakout, breakout plus volume above the prior-20 median, and breakout+volume with a fully completed 1h EMA50/EMA200 bullish trend. Entry is the next 5m open; stop is 1.5x 15m ATR14 and target is 2R. It reports chronological training/untouched holdout metrics and 0/5/10/20 bps slippage sensitivity. Requires at least 3,000 5m bars to establish the 1h EMA200 context. Long-only, read-only, and returns `RESEARCH_ONLY_NOT_CERTIFIED`; no orders are submitted.\n- `GET /api/backtest/rolling-oos?timeframe=5Min&limit=1000&windows=4` runs the unchanged EMA9/EMA21 + ATR14 rules over sequential, non-overlapping out-of-sample windows.
 - The first 30% of the sample is reserved for indicator/history warm-up; entries are blocked until each later window begins. Each window starts flat, so its metrics are a segmented comparison rather than one continuous portfolio curve.
 - Default modelling assumptions are 0.25% estimated fee per side and 5 bps adverse slippage per side. These are assumptions, not measured fills or a verified broker fee schedule.
 - The endpoint reports each window separately and explicitly returns `RESEARCH_ONLY_NOT_CERTIFIED`. Positive windows do not prove future profitability or complete Stage 4.
@@ -195,6 +195,15 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - Drawdown in the underlying backtest is closed-trade drawdown; intratrade mark-to-market drawdown is not yet modelled.
 - The endpoint is read-only: historical data GET requests only, no Paper or live order submissions.
 
+
+## Stage 4.3 — Breakout momentum research
+
+- `GET /api/backtest/stage4-3?timeframe=5Min&limit=10000` compares three predeclared long-only variants: 15m Donchian-20 close breakout; breakout plus 15m volume above the prior-20 median; and breakout+volume with completed 1h EMA50 > EMA200 and close > EMA50.
+- Breakout and volume thresholds use only the 20 completed 15m candles before the signal candle. Signals are evaluated only at a completed 15m close and simulated at the next 5m open.
+- Stop is 1.5x completed 15m ATR14 and target is 2R. The report includes chronological training and untouched holdout metrics plus slippage sensitivity at 0, 5, 10 and 20 bps per side.
+- Requires at least 3,000 5m bars to provide warm-up for the 1h EMA200 context. Incomplete 15m/1h aggregation buckets are discarded.
+- BTC crypto volume is venue-reported, not consolidated global volume. Fee/slippage assumptions, OHLC stop-first handling, fixed notional and closed-trade drawdown remain limitations.
+- Long-only spot-compatible research; no short orders, Paper orders, or live orders. Returns `RESEARCH_ONLY_NOT_CERTIFIED`.
 
 ## Stage 4.2 — Multi-timeframe and entry-filter research
 
