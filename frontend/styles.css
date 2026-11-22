@@ -631,3 +631,8 @@ h2,h3{letter-spacing:.015em}
  .tools-drawer>summary small{font-size:8px}
  .tools-drawer .tools-content{padding:8px;gap:8px}
 }
+
+/* v32 — four clear dashboard action controls */
+.action-bar{grid-template-columns:repeat(4,minmax(0,1fr))}
+#disable-auto-entry-bar{border-color:#92505e;background:#321e27;color:#ffd4db}
+@media(max-width:600px){.action-bar{grid-template-columns:repeat(2,minmax(0,1fr))}.action-bar button{min-height:40px}}
