@@ -136,7 +136,6 @@ def run_stage56_failure_report(
     diagnostics = {
         "signal_count": sum(bool(x) for x in mask),
         "closed_trade_count": len(trades),
-        "signals_without_closed_trade": max(0, sum(bool(x) for x in mask) - len(trades)),
         "exit_reason_attribution": reason_summary,
         "entry_regime_attribution": regime_summary,
         "longest_consecutive_losing_trades": _longest_losing_streak(trades),
