@@ -581,7 +581,7 @@ function setupControls(){
  const s517=$("run-stage517");if(s517)s517.addEventListener("click",runStage517);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
- $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
+ $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Dashboard":"Ⅱ Pause Dashboard";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
  $("stop-monitor").addEventListener("click",()=>{monitorStopped=true;monitorPaused=false;if(refreshTimer)clearInterval(refreshTimer);$("stop-monitor").textContent="■ Monitoring Stopped";$("pause-monitor").disabled=true;setStatus("MONITORING STOPPED");});
  $("view-report").addEventListener("click",()=>{location.hash="backtest-panel";runBacktest();});
  document.querySelectorAll(".tabs a").forEach(a=>a.addEventListener("click",()=>{document.querySelectorAll(".tabs a").forEach(x=>x.classList.remove("active"));a.classList.add("active");}));
