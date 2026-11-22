@@ -32,6 +32,8 @@ def build_stage44_signals(bars: list[dict], lookback: int = 20,
         }
     by15 = {x["bucket"]: i for i, x in enumerate(m15)}
     by60 = {x["bucket"]: i for i, x in enumerate(h1)}
+    hour_keys = sorted(by60)
+    hour_cursor = 0
     names = ("breakout_relvol_1p5", "breakout_pullback", "breakout_pullback_relvol", "breakout_relvol_1p5_1h20_50")
     masks = {name: [False] * len(bars) for name in names}
     atr_base = [None] * len(bars)
@@ -88,10 +90,9 @@ def build_stage44_signals(bars: list[dict], lookback: int = 20,
                 setup["origin"] = p
         # Most recently completed hourly candle only.
         b1 = close_ts // 3600 - 1
-        hp = by60.get(b1)
-        if hp is None:
-            earlier = [k for k in by60 if k <= b1]
-            hp = by60[max(earlier)] if earlier else None
+        while hour_cursor + 1 < len(hour_keys) and hour_keys[hour_cursor + 1] <= b1:
+            hour_cursor += 1
+        hp = by60[hour_keys[hour_cursor]] if hour_keys and hour_keys[hour_cursor] <= b1 else None
         state = h1_state[h1[hp]["bucket"]] if hp is not None else None
         if state:
             diag["hourly_ema20_50_valid"] += int(state["valid_20_50"])
