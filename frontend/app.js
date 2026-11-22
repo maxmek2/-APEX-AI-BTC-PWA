@@ -56,6 +56,21 @@ async function refresh(){
  $("mtf-checks").innerHTML=mtf.map(x=>'<div class="mtf-row"><div><strong>'+x.label+'</strong><small>'+(x.signal?"EMA 9 "+money(x.signal.ema_9)+" · EMA 21 "+money(x.signal.ema_21):"Not enough complete candles")+'</small></div><strong class="'+(x.signal&&x.signal.signal!=="WAIT"?"check-pass":"muted")+'">'+(x.signal?x.signal.signal.replace("_SETUP",""):"NOT ENOUGH DATA")+'</strong></div>').join("");
  const failures=results.filter(x=>x.status==="rejected");setStatus(failures.length?"PARTIAL DATA · "+failures.map(x=>x.reason.message).join(" · "):"ACCOUNT CONNECTED · PAPER",failures.length===0);
 }
+async function runMartingaleGridBacktest(){
+ const out=$("martingale-grid-result"),btn=$("run-martingale-grid");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Fetching BTC/USD M5 history and replaying the frozen synthetic SHORT grid…";
+ try{
+  const d=await get("/backtest/martingale-grid?limit=10000&starting_equity=100&fee_rate=0.0002&slippage_bps=10");
+  if(d.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient M5 history: "+d.bars_used+" bars.";return;}
+  const m=d.metrics||{},o=d.open_basket;
+  const metric=(label,value)=>'<div><small>'+label+'</small><b>'+value+'</b></div>';
+  const grid='<div class="backtest-grid">'+metric("Marked equity",money(m.ending_equity_marked_usd))+metric("Realized P&amp;L",money(m.realized_net_pnl_usd))+metric("Unrealized P&amp;L",money(m.unrealized_net_pnl_usd))+metric("Closed baskets",m.closed_baskets??0)+metric("Win rate",String(m.win_rate_percent??0)+"%")+metric("Max MTM drawdown",String(m.max_mark_to_market_drawdown_percent??0)+"%")+metric("Max exposure",money(m.max_exposure_usd))+metric("Max floating loss",money(m.max_floating_loss_usd))+'</div>';
+  const open=o?'<p><strong>Open basket:</strong> '+o.legs+' legs · exposure '+money(o.exposure_usd)+' · average '+money(o.weighted_average_entry)+' · floating '+money(o.unrealized_net_pnl_usd)+'</p>':'<p>No open basket at sample end.</p>';
+  const rows=(d.trades||[]).slice(-8).map(t=>'<tr><td>'+escapeLedger(t.entry_time)+'</td><td>'+escapeLedger(t.exit_time)+'</td><td>'+t.legs+'</td><td>'+escapeLedger(t.exit_reason)+'</td><td>'+money(t.net_pnl_usd)+'</td></tr>').join("");
+  out.innerHTML='<strong>'+escapeLedger(d.status)+'</strong><p>'+d.bars_used+'/'+d.requested_bars+' candles · '+ledgerTime(d.period?.from)+' → '+ledgerTime(d.period?.to)+'</p>'+grid+open+'<div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Legs</th><th>Reason</th><th>Net P&amp;L</th></tr></thead><tbody>'+rows+'</tbody></table></div><small class="muted">Synthetic SHORT simulation only. Stop-first OHLC model; fees/slippage estimated. No funding, spread, borrowing or market-depth model. Alpaca write API called: NO · Order submitted: NO · Auto Entry unchanged.</small>';
+ }catch(e){out.textContent="Martingale Grid backtest failed: "+e.message;}
+ finally{btn.disabled=false;}
+}
 async function runBacktest(){const out=$("backtest-result");out.textContent="Running read-only historical simulation…";try{const r=await get("/backtest?timeframe="+selectedTimeframe+"&limit=10000&starting_equity=100&notional_usd=10"),m=r.metrics;if(!m){out.textContent="Backtest status: "+r.status+" · Bars: "+r.bars_used;return;}out.innerHTML='<div class="backtest-grid"><div><small>Ending equity</small><b>'+money(m.ending_equity_usd)+'</b></div><div><small>Net P&amp;L</small><b class="'+(m.net_pnl_usd>=0?"check-pass":"check-fail")+'">'+money(m.net_pnl_usd)+'</b></div><div><small>Trades</small><b>'+m.trades+'</b></div><div><small>Win rate</small><b>'+m.win_rate_percent+'%</b></div><div><small>Gross PF</small><b>'+(m.gross_profit_factor??"—")+'</b></div><div><small>Net PF</small><b>'+(m.net_profit_factor??"—")+'</b></div><div><small>Max drawdown</small><b>'+m.max_drawdown_percent+'%</b></div></div><small class="muted">Historical simulation · '+r.bars_used+' / '+r.requested_bars+' requested candles · '+(r.history_complete_for_request?"requested sample complete":"partial history")+(r.has_more_data?" · older data available":"")+(r.period?" · "+r.period.from+" to "+r.period.to:"")+'</small>'; }catch(e){out.textContent="Backtest unavailable: "+e.message;}}
 function escapeLedger(value){return String(value??"—").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));}
 function ledgerTime(value){if(!value)return "—";const d=new Date(value);return Number.isNaN(d.getTime())?escapeLedger(value):escapeLedger(d.toLocaleString());}
@@ -547,6 +562,7 @@ function setupControls(){
  if(tokenInput){const savedToken=getPaperToken();tokenInput.value=savedToken;if(rememberToken){rememberToken.checked=true;if(savedToken)savePaperToken(savedToken,true);rememberToken.addEventListener("change",()=>{savePaperToken(tokenInput.value,rememberToken.checked);});}tokenInput.addEventListener("change",()=>{savePaperToken(tokenInput.value,!!rememberToken?.checked);loadPaperEngineStatus();});}
  const tf=$("timeframe");tf.addEventListener("change",()=>{selectedTimeframe=tf.value;text("signal-timeframe",labels[selectedTimeframe].toUpperCase());refresh().catch(e=>setStatus(e.message));});
  $("run-backtest").addEventListener("click",runBacktest);
+ const mg=$("run-martingale-grid");if(mg)mg.addEventListener("click",runMartingaleGridBacktest);
  const s51=$("run-stage51");if(s51)s51.addEventListener("click",runStage51Ledger);
  const s53=$("run-stage53");if(s53)s53.addEventListener("click",runStage53);
  const s54=$("run-stage54");if(s54)s54.addEventListener("click",runStage54);
