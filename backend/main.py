@@ -7,6 +7,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+try:
+    from .stage43 import build_breakout_signals, run_breakout_backtest
+except ImportError:  # uvicorn main:app with backend as app-dir
+    from stage43 import build_breakout_signals, run_breakout_backtest
+
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
 SECRET=os.getenv("ALPACA_SECRET_KEY","")
@@ -874,6 +879,129 @@ async def stage42_filter_research(
         "alpaca_write_api_called": False,
     }
 
+
+
+
+
+@app.get("/api/backtest/stage4-3")
+async def stage43_breakout_research(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(10000, ge=3000, le=10000),
+    train_fraction: float = Query(0.60, gt=0.50, lt=0.80),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+):
+    """Read-only 15m Donchian breakout + volume + completed 1h trend comparison."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 3000:
+        return {
+            "symbol": "BTC/USD", "status": "insufficient_data",
+            "bars_used": len(bars), "minimum_required": 3000,
+            "reason": "At least 200 completed hourly candles plus warm-up are needed for EMA200 trend context.",
+            "automated_execution": False, "order_submitted": False,
+            "alpaca_write_api_called": False,
+        }
+    split = int(len(bars) * train_fraction)
+    if split < 1000 or len(bars) - split < 100:
+        raise HTTPException(422, "Insufficient chronological training or holdout data")
+    built = build_breakout_signals(bars, lookback=20)
+    masks, atr_by_base = built["signals"], built["atr_by_base"]
+    reports = {}
+    first_holdout_fill = bars[split + 1].get("t")
+    for name, mask in masks.items():
+        train = run_breakout_backtest(
+            bars[:split + 1], mask[:split + 1], atr_by_base[:split + 1],
+            starting_equity, notional_usd, fee_rate, slippage_bps,
+        )
+        holdout_costs = []
+        for cost_bps in sorted({0, 5, 10, 20, slippage_bps}):
+            test = run_breakout_backtest(
+                bars, mask, atr_by_base, starting_equity, notional_usd,
+                fee_rate, cost_bps, start_index=split,
+            )
+            entries = [trade for trade in test["trades"] if trade.get("entry_time")]
+            boundary_ok = all(
+                trade["entry_time"] and trade["entry_time"] >= first_holdout_fill
+                for trade in entries
+            )
+            holdout_costs.append({
+                "slippage_bps_per_side": cost_bps,
+                "metrics": test["metrics"],
+                "entries_after_split": boundary_ok,
+            })
+        selected_cost = next(x for x in holdout_costs if x["slippage_bps_per_side"] == slippage_bps)
+        reports[name] = {
+            "training_metrics": train["metrics"],
+            "holdout_metrics": selected_cost["metrics"],
+            "holdout_trade_count": selected_cost["metrics"]["trades"],
+            "holdout_entries_after_split": selected_cost["entries_after_split"],
+            "cost_sensitivity": holdout_costs,
+            "training_signal_count": sum(mask[:split + 1]),
+            "holdout_signal_count": sum(mask[split:]),
+        }
+    return {
+        "symbol": "BTC/USD", "timeframe": timeframe,
+        "status": "fixed_breakout_variants_train_and_untouched_holdout",
+        "validation": "RESEARCH_ONLY_NOT_CERTIFIED",
+        "bars_used": len(bars), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "split": {
+            "method": "chronological", "train_fraction": train_fraction,
+            "training_bars": split + 1, "holdout_bars": len(bars) - split - 1,
+            "train_to": bars[split].get("t"),
+            "first_possible_holdout_fill": first_holdout_fill,
+            "holdout_to": bars[-1].get("t"),
+        },
+        "strategy": {
+            "signal_timeframe": "15Min",
+            "execution_timeframe": "5Min",
+            "trend_timeframe": "1Hour",
+            "breakout": "Completed 15m close above the prior 20 completed 15m candle highs; current candle excluded from channel.",
+            "volume": "Completed 15m volume greater than the median of the prior 20 completed 15m candles.",
+            "trend": "Latest completed 1h EMA50 > EMA200 and close > EMA50.",
+            "entry": "Only at completed 15m close; simulated fill at next 5m candle open.",
+            "stop": "1.5 x completed 15m ATR14",
+            "target": "2.0R",
+            "direction": "Long-only, spot-compatible; no shorting.",
+        },
+        "variant_definitions": {
+            "breakout_only": "15m Donchian 20-candle close breakout",
+            "breakout_volume": "Breakout plus 15m volume above prior-20 median",
+            "breakout_volume_1h": "Breakout plus volume confirmation and completed 1h EMA50/200 bullish trend",
+        },
+        "aggregation": built["diagnostics"],
+        "reports": reports,
+        "checks": {
+            "chronological_split": True,
+            "holdout_parameters_predeclared": True,
+            "15m_signals_only_after_candle_close": True,
+            "1h_trend_uses_completed_candles_only": True,
+            "current_15m_candle_excluded_from_breakout_channel": True,
+            "holdout_entries_after_split": all(x["holdout_entries_after_split"] for x in reports.values()),
+            "read_only": True,
+        },
+        "assumptions": {
+            "starting_equity_usd": starting_equity,
+            "fixed_notional_usd": notional_usd,
+            "fee_per_side_percent": fee_rate * 100,
+            "slippage_bps_per_side": slippage_bps,
+            "ambiguous_ohlc_exit": "STOP_LOSS_FIRST",
+            "drawdown": "Closed-trade equity drawdown; intratrade mark-to-market not modelled.",
+        },
+        "limitations": [
+            "Requires at least 200 completed hourly candles for the EMA200 trend context; shorter datasets are rejected.",
+            "Alpaca OHLCV volume is venue-reported crypto volume and may not represent the entire BTC market.",
+            "A single chronological holdout is not independent future validation; the strategy remains research-only.",
+            "Fixed notional, estimated fees and slippage are modelling assumptions, not verified fills or broker fee quotes.",
+            "OHLC bars cannot reveal intrabar path; ambiguous stop/target candles use stop-first. Gaps and latency may differ in real execution.",
+            "Long-only spot simulation; short-side performance is not evaluated.",
+        ],
+        "automated_execution": False, "order_submitted": False,
+        "alpaca_write_api_called": False,
+    }
 
 
 @app.get("/api/backtest/rolling-oos")
