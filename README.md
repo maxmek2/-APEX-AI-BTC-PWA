@@ -289,3 +289,13 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - Reconciles every simulated trade and aggregate gross P&L, fees, slippage and net P&L. Slippage is already reflected in executed prices and gross P&L, so it is reported but not deducted a second time.
 - Reports the latest 20 training and holdout trades. An audit pass confirms structural and arithmetic checks only; it does not certify profitability.
 - Historical market-data GET only. No account, order, position or execution endpoint; no order submission; Auto Entry remains OFF.
+
+
+## Stage 5.6 — training-only strategy failure attribution
+
+- `GET /api/research/stage5-6/run?timeframe=5Min&limit=30000` audits historical bar structure, then truncates all strategy calculations to the chronological training segment (default 60%).
+- Replays only the frozen Stage 4.4 `breakout_pullback_relvol` baseline with $100 starting equity, $10 fixed notional, 0.25% fee per side and 5 bps slippage per side.
+- Attributes training outcomes by exit reason and entry regime; reports holding duration, losing streak, gross/net P&L, fee burden and a bounded training ledger.
+- Holdout signals, trades, regimes and metrics are deliberately not calculated or returned. Holdout remains sealed for a later independent test after a new strategy is frozen.
+- No parameter optimization, selection, promotion, account/order/position calls, order submission or execution-state changes. Auto Entry remains OFF.
+- Findings are descriptive hypotheses only and do not prove causation or profitability.

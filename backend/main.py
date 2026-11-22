@@ -17,6 +17,7 @@ try:
     from .stage53 import run_stage53_report
     from .stage54 import run_stage54_report
     from .stage55 import run_stage55_report
+    from .stage56 import run_stage56_failure_report
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
     from stage44 import run_stage44_report, build_stage44_signals
@@ -27,6 +28,7 @@ except ImportError:  # uvicorn main:app with backend as app-dir
     from stage53 import run_stage53_report
     from stage54 import run_stage54_report
     from stage55 import run_stage55_report
+    from stage56 import run_stage56_failure_report
 
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
@@ -2623,6 +2625,38 @@ async def stage55_history_cost_audit(
             notional_usd=notional_usd, fee_rate=fee_rate,
             slippage_bps=slippage_bps, train_fraction=train_fraction,
         )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+@app.get("/api/research/stage5-6/run")
+async def stage56_training_failure_attribution(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(30000, ge=5000, le=30000),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+    train_fraction: float = Query(0.60, ge=0.50, le=0.80),
+):
+    """Training-only read-only failure attribution; holdout is not evaluated."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 5000:
+        return {
+            "stage": "5.6", "status": "INSUFFICIENT_DATA",
+            "bars_used": len(bars), "requested_bars": limit,
+            "minimum_bars": 5000, "holdout_accessed": False,
+            "order_submitted": False, "alpaca_write_api_called": False,
+            "automated_execution": False,
+        }
+    try:
+        report = run_stage56_failure_report(
+            bars, requested_bars=limit, starting_equity=starting_equity,
+            notional_usd=notional_usd, fee_rate=fee_rate,
+            slippage_bps=slippage_bps, train_fraction=train_fraction,
+        )
+        report["has_more_data"] = bool(has_more_data)
+        report["data_pages_fetched"] = data_pages
+        return report
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

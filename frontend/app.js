@@ -109,6 +109,23 @@ async function runStage53(){
 
 
 
+
+async function runStage56(){
+ const out=$("stage56-result"),btn=$("run-stage56");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Fetching BTC/USD M5 history and analyzing only the chronological training segment…";
+ try{
+  const data=await get("/research/stage5-6/run?timeframe=5Min&limit=30000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&train_fraction=0.60");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / "+escapeLedger(data.minimum_bars)+" minimum bars.";return;}
+  const m=data.training?.metrics||{},d=data.training?.diagnostics||{};
+  const metricGrid='<div class="backtest-grid">'+ledgerMetric("Training bars",data.training_bars??0)+ledgerMetric("Trades",m.trades??0)+ledgerMetric("Gross P&L",money(m.gross_pnl_usd),Number(m.gross_pnl_usd)>0)+ledgerMetric("Fees",money(m.estimated_fees_usd))+ledgerMetric("Slippage",money(m.estimated_slippage_usd))+ledgerMetric("Net P&L",money(m.net_pnl_usd),Number(m.net_pnl_usd)>0)+ledgerMetric("Net profit factor",m.net_profit_factor??"—")+ledgerMetric("Win rate",String(m.win_rate_percent??0)+"%")+ledgerMetric("Max closed DD",String(m.max_drawdown_percent??0)+"%")+ledgerMetric("Longest losing streak",d.longest_consecutive_losing_trades??0)+ledgerMetric("Average hold",d.average_holding_minutes==null?"—":String(d.average_holding_minutes)+" min")+ledgerMetric("Fee burden",d.fee_burden_percent_of_absolute_gross_pnl==null?"—":String(d.fee_burden_percent_of_absolute_gross_pnl)+"%")+'</div>';
+  const groups=(title,obj)=>'<h4>'+title+'</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Group</th><th>Trades</th><th>Win %</th><th>Net P&L</th><th>Net PF</th></tr></thead><tbody>'+Object.entries(obj||{}).map(([key,v])=>'<tr><td>'+escapeLedger(key)+'</td><td>'+escapeLedger(v.trades)+'</td><td>'+escapeLedger(v.win_rate_percent)+'%</td><td>'+money(v.net_pnl_usd)+'</td><td>'+escapeLedger(v.net_profit_factor??"—")+'</td></tr>').join("")+'</tbody></table></div>';
+  const hypotheses=(data.failure_hypotheses||[]).map(x=>'<li>'+escapeLedger(x)+'</li>').join("");
+  const trades=(data.training?.trade_ledger||[]).map(t=>'<tr><td>'+ledgerTime(t.entry_time)+'</td><td>'+ledgerTime(t.exit_time)+'</td><td>'+escapeLedger(t.exit_reason)+'</td><td>'+escapeLedger(t.entry_regime)+'</td><td>'+escapeLedger(t.holding_minutes??"—")+'</td><td>'+money(t.net_pnl_usd)+'</td></tr>').join("");
+  out.innerHTML='<strong class="check-fail">'+escapeLedger(data.status)+'</strong><p>BTC/USD · '+escapeLedger(data.bars_received)+' bars received · '+escapeLedger(data.training_bars)+' training bars · Holdout: SEALED</p><small class="muted">'+ledgerTime(data.training_period?.from)+' → '+ledgerTime(data.training_period?.to)+' · Fixed Stage 4.4 baseline; no optimization</small>'+metricGrid+groups("Exit reason attribution",d.exit_reason_attribution)+groups("Entry regime attribution",d.entry_regime_attribution)+'<h4>Failure hypotheses to investigate</h4><ul>'+hypotheses+'</ul><h4>Training ledger · latest '+(data.training?.trade_ledger||[]).length+' trades</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry</th><th>Exit</th><th>Reason</th><th>Regime</th><th>Hold min</th><th>Net</th></tr></thead><tbody>'+trades+'</tbody></table></div><small class="muted">Holdout status: '+escapeLedger(data.holdout?.status)+' · Holdout accessed: NO · Strategy selection: NO · No account/order/position API calls · No order submitted · Auto Entry remains OFF. Findings are descriptive hypotheses, not proof of causation or profitability.</small>';
+ }catch(e){out.textContent="Stage 5.6 analysis unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage55(){
  const out=$("stage55-result"),btn=$("run-stage55");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Fetching up to 30,000 BTC/USD M5 candles and auditing data integrity and simulated costs…";
@@ -178,6 +195,7 @@ function setupControls(){
  const s53=$("run-stage53");if(s53)s53.addEventListener("click",runStage53);
  const s54=$("run-stage54");if(s54)s54.addEventListener("click",runStage54);
  const s55=$("run-stage55");if(s55)s55.addEventListener("click",runStage55);
+ const s56=$("run-stage56");if(s56)s56.addEventListener("click",runStage56);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
