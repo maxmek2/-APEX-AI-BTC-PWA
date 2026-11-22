@@ -173,3 +173,13 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - Strategy parameters are fixed; the holdout is not optimized. The report includes separate training and out-of-sample metrics and a check for test-entry boundary leakage.
 - A single holdout is only an initial diagnostic. It does not certify robustness, profitability, or readiness; repeat evaluation across multiple market regimes and walk-forward windows.
 - The endpoint is read-only and never submits an order.
+
+
+## Stage 4 — Rolling out-of-sample robustness research
+
+- `GET /api/backtest/rolling-oos?timeframe=5Min&limit=1000&windows=4` runs the unchanged EMA9/EMA21 + ATR14 rules over sequential, non-overlapping out-of-sample windows.
+- The first 30% of the sample is reserved for indicator/history warm-up; entries are blocked until each later window begins. Each window starts flat, so its metrics are a segmented comparison rather than one continuous portfolio curve.
+- Default modelling assumptions are 0.25% estimated fee per side and 5 bps adverse slippage per side. These are assumptions, not measured fills or a verified broker fee schedule.
+- The endpoint reports each window separately and explicitly returns `RESEARCH_ONLY_NOT_CERTIFIED`. Positive windows do not prove future profitability or complete Stage 4.
+- The route is read-only. It makes historical market-data reads only and never submits orders or calls an Alpaca write endpoint.
+- This is an additional diagnostic, not a replacement for controlled Paper lifecycle tests, realistic fee verification, intrabar data, or independent review.
