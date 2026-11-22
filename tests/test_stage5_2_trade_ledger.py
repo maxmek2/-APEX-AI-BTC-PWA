@@ -1,8 +1,14 @@
+from datetime import datetime, timedelta, timezone
+
 from backend import stage44
 
 
 def test_stage44_report_exposes_training_and_holdout_trade_ledgers(monkeypatch):
-    bars = [{"t": f"2026-01-01T00:{i % 60:02d}:00Z"} for i in range(3000)]
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    bars = [
+        {"t": (start + timedelta(minutes=5 * i)).isoformat().replace("+00:00", "Z")}
+        for i in range(3000)
+    ]
 
     monkeypatch.setattr(
         stage44,
@@ -14,7 +20,7 @@ def test_stage44_report_exposes_training_and_holdout_trade_ledgers(monkeypatch):
         },
     )
 
-    def fake_backtest(run_bars, *_args, slippage_bps=5.0, **_kwargs):
+    def fake_backtest(run_bars, _mask, _atrs, _equity, _notional, _fee, slippage_bps, **_kwargs):
         stamp = run_bars[-1]["t"] if run_bars else None
         trade = {
             "entry_time": stamp,
