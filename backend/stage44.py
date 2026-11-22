@@ -38,7 +38,8 @@ def build_stage44_signals(bars: list[dict], lookback: int = 20,
     diag = {"complete_15m_bars": len(m15), "complete_1h_bars": len(h1),
             "breakout_events": 0, "volume_ratio_pass": 0, "pullback_confirmations": 0,
             "hourly_ema20_50_valid": 0, "hourly_ema20_50_bullish": 0,
-            "hourly_ema50_200_valid": 0, "hourly_ema50_200_bullish": 0,\n            "relative_volume_threshold": relative_volume_threshold,\n            "pullback_atr": pullback_atr, "pullback_bars": pullback_bars,
+            "hourly_ema50_200_valid": 0, "hourly_ema50_200_bullish": 0,
+            "relative_volume_threshold": relative_volume_threshold,\n            "pullback_atr": pullback_atr, "pullback_bars": pullback_bars,
             "breakouts_with_valid_1h": 0, "breakouts_with_bullish_1h20_50": 0,
             "breakouts_with_bullish_1h50_200": 0}
     pending = []
