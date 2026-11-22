@@ -1222,6 +1222,9 @@ async def rolling_oos_backtest(
 from pydantic import BaseModel, Field
 
 PAPER_API_ORIGIN = "https://paper-api.alpaca.markets"
+# Alpaca Crypto currently permits simple orders only; bracket/OCO protection is unavailable.
+# Keep unattended BTC entry fail-closed until a verified protective-exit design exists.
+PAPER_CRYPTO_NATIVE_BRACKET_EXITS = False
 
 class PaperPreviewRequest(BaseModel):
     timeframe: str = Field(default="5Min", pattern="^(1Min|5Min|15Min|1Hour)$")
@@ -1240,9 +1243,10 @@ async def paper_execution_status():
         "mode": "paper" if _paper_only_configured() else "blocked",
         "paper_host_verified": _paper_only_configured(),
         "auto_enabled": bool(_auto_entry.get("enabled", False)) if "_auto_entry" in globals() else False,
-        "order_submission_enabled": bool(_auto_entry.get("enabled", False)) if "_auto_entry" in globals() else False,
+        "order_submission_enabled": False,
         "protective_exit_support": False,
-        "reason": "BTC crypto bracket/OCO exits are not used here. Guarded Paper auto-entry is available only after explicit enable; exits rely on an experimental server-polled manager and are not guaranteed exchange-native protection.",
+        "native_bracket_oco_supported": PAPER_CRYPTO_NATIVE_BRACKET_EXITS,
+        "reason": "Paper Auto Entry is safety-locked: Alpaca Crypto does not support bracket/OCO order classes in this integration. Server-polled exits are not guaranteed protection.",
         "symbol": "BTC/USD"
     }
 
@@ -1685,6 +1689,10 @@ def _utc_day_key() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 async def _auto_entry_tick():
+    if not PAPER_CRYPTO_NATIVE_BRACKET_EXITS:
+        _auto_entry["enabled"] = False
+        _auto_entry["last_event"] = "BLOCKED_NATIVE_PROTECTIVE_EXITS_UNAVAILABLE"
+        return
     if not _auto_entry["enabled"] or not _paper_only_configured():
         return
     async with _auto_entry_lock:
@@ -1826,11 +1834,14 @@ async def auto_entry_status():
         "daily_trade_count_limit": _auto_entry["max_trades_per_day"],
         "one_open_btc_position_max": True,
         "order_submission_enabled": bool(_auto_entry["enabled"] and _paper_only_configured()),
-        "warning": "Paper-only. Auto Entry is OFF by default and resets OFF after server restart. Software-polled exits are not guaranteed exchange-native protection."
+        "native_bracket_oco_supported": PAPER_CRYPTO_NATIVE_BRACKET_EXITS,
+        "warning": "Paper-only. Auto Entry is safety-locked until verified native BTC protective exits are supported. No order can be submitted."
     }
 
 @app.post("/api/paper/auto-entry/enable")
 async def enable_auto_entry():
+    if not PAPER_CRYPTO_NATIVE_BRACKET_EXITS:
+        raise HTTPException(409, "Paper Auto Entry locked: verified native BTC protective exits are not supported. No order was submitted.")
     if not _paper_only_configured():
         raise HTTPException(403, "Only the exact Alpaca Paper API host is allowed")
     async with _auto_entry_lock:
