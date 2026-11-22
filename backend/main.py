@@ -1222,9 +1222,9 @@ async def rolling_oos_backtest(
 from pydantic import BaseModel, Field
 
 PAPER_API_ORIGIN = "https://paper-api.alpaca.markets"
-# Alpaca Crypto currently permits simple orders only; bracket/OCO protection is unavailable.
-# Keep unattended BTC entry fail-closed until a verified protective-exit design exists.
-PAPER_CRYPTO_NATIVE_BRACKET_EXITS = False
+# APEX calculates and monitors BTC exits itself; Alpaca Paper is execution-only.
+# This is NOT native Alpaca bracket/OCO support. Server polling has downtime/slippage risk.
+PAPER_APEX_MANAGED_EXITS = True
 
 class PaperPreviewRequest(BaseModel):
     timeframe: str = Field(default="5Min", pattern="^(1Min|5Min|15Min|1Hour)$")
@@ -1245,8 +1245,8 @@ async def paper_execution_status():
         "auto_enabled": bool(_auto_entry.get("enabled", False)) if "_auto_entry" in globals() else False,
         "order_submission_enabled": False,
         "protective_exit_support": False,
-        "native_bracket_oco_supported": PAPER_CRYPTO_NATIVE_BRACKET_EXITS,
-        "reason": "Paper Auto Entry is safety-locked: Alpaca Crypto does not support bracket/OCO order classes in this integration. Server-polled exits are not guaranteed protection.",
+        "apex_managed_exits_enabled": PAPER_APEX_MANAGED_EXITS,
+        "reason": "APEX-managed server-polled exits are enabled for Paper only; monitoring depends on Render uptime, network and fresh market data. This is not exchange-native protection.",
         "symbol": "BTC/USD"
     }
 
@@ -1412,18 +1412,22 @@ async def _exit_manager_tick():
         # Position identity excludes quantity: partial fills must not recalculate risk levels.
         position_key = f'{btc.get("symbol")}:{btc.get("avg_entry_price")}'
         if _exit_manager["position_key"] != position_key:
-            bars_data = await get_json(
-                f"{DATA}/v1beta3/crypto/us/bars",
-                {"symbols": "BTC/USD", "timeframe": "5Min", "limit": 100, "sort": "desc"}
-            )
-            bars = list(reversed(bars_data.get("bars", {}).get("BTC/USD", [])))
-            volatility = atr(bars, 14)
-            if not volatility or volatility <= 0:
-                _exit_manager["last_event"] = "WAITING_FOR_VALID_ATR"
+            # Prefer the original signal-time ATR plan saved before order submission.
+            # Anchor its distances to the broker-confirmed average fill price.
+            plan = _auto_entry.get("pending_entry_plan") or {}
+            plan_atr = float(plan.get("atr_14") or 0)
+            plan_stop_mult = float(plan.get("stop_atr_multiple") or 1.5)
+            plan_rr = float(plan.get("reward_risk") or 2.0)
+            if plan_atr > 0 and plan.get("symbol") == "BTC/USD":
+                distance = plan_atr * plan_stop_mult
+            else:
+                # Existing/manual positions have no trustworthy signal-time plan:
+                # fail closed instead of inventing fresh protection after entry.
+                _exit_manager["last_event"] = "BLOCKED_NO_SAVED_ENTRY_RISK_PLAN"
+                _exit_manager["armed"] = False
                 return
-            distance = volatility * 1.5
             stop_price = round(entry - distance, 2)
-            target_price = round(entry + distance * 2.0, 2)
+            target_price = round(entry + distance * plan_rr, 2)
             if stop_price <= 0 or not (stop_price < entry < target_price):
                 _exit_manager["last_event"] = "BLOCKED_INVALID_PROTECTIVE_LEVELS"
                 _exit_manager["armed"] = False
@@ -1559,7 +1563,7 @@ async def paper_exit_manager_status():
         "last_check": _exit_manager["last_check"],
         "last_event": _exit_manager["last_event"],
         "close_order_id": _exit_manager["close_order_id"],
-        "warning": "Server polling is not a guaranteed exchange-native stop. It depends on Render uptime, network access and market data; gaps/slippage are possible."
+        "warning": "APEX-managed Paper exits are server-polled, not exchange-native. Render downtime, network/API errors and slippage can delay or prevent closure."
     }
 
 @app.post("/api/paper/exit-manager/arm")
@@ -1706,7 +1710,7 @@ def _utc_day_key() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 async def _auto_entry_tick():
-    if not PAPER_CRYPTO_NATIVE_BRACKET_EXITS:
+    if not PAPER_APEX_MANAGED_EXITS:
         _auto_entry["enabled"] = False
         _auto_entry["last_event"] = "BLOCKED_NATIVE_PROTECTIVE_EXITS_UNAVAILABLE"
         return
@@ -1829,10 +1833,23 @@ async def _auto_entry_tick():
 
             _auto_entry["last_entry_attempt"] = now.isoformat()
             _auto_entry["last_signal_bar"] = bar_time
-            _auto_entry["last_event"] = "PAPER_ENTRY_SUBMITTING"
+            # Persist the signal-time risk plan before placing the Paper order.
+            # Use a deterministic client_order_id to help reconcile ambiguous submits.
+            client_order_id = "apexbtc-" + bar_dt.strftime("%Y%m%d%H%M") + "-" + str(abs(hash(bar_time)) % 100000000)
+            _auto_entry["pending_entry_plan"] = {
+                "symbol": "BTC/USD", "client_order_id": client_order_id,
+                "signal_bar_time": bar_time, "atr_14": volatility,
+                "stop_atr_multiple": 1.5, "reward_risk": 2.0,
+                "reference_ask": reference_price, "planned_stop": round(stop_price, 2),
+                "planned_target": round(reference_price + stop_distance * 2.0, 2),
+                "quantity": quantity, "created_at": now.isoformat(),
+            }
+            _auto_entry["last_event"] = "PAPER_ENTRY_PLAN_SAVED_SUBMITTING"
+            _persist_runtime_state()
             order = await _paper_request("POST", "/v2/orders", body={
                 "symbol": "BTC/USD", "qty": f"{quantity:.8f}",
-                "side": "buy", "type": "market", "time_in_force": "gtc"
+                "side": "buy", "type": "market", "time_in_force": "gtc",
+                "client_order_id": client_order_id
             })
             _auto_entry.update({
                 "last_order_id": order.get("id"),
@@ -1851,14 +1868,12 @@ async def auto_entry_status():
         "daily_trade_count_limit": _auto_entry["max_trades_per_day"],
         "one_open_btc_position_max": True,
         "order_submission_enabled": bool(_auto_entry["enabled"] and _paper_only_configured()),
-        "native_bracket_oco_supported": PAPER_CRYPTO_NATIVE_BRACKET_EXITS,
-        "warning": "Paper-only. Auto Entry is safety-locked until verified native BTC protective exits are supported. No order can be submitted."
+        "apex_managed_exits_enabled": PAPER_APEX_MANAGED_EXITS,
+        "warning": "Paper-only. APEX calculates SL/TP and polls exits; server downtime, network failure and slippage can delay exits. Not native broker protection."
     }
 
 @app.post("/api/paper/auto-entry/enable")
 async def enable_auto_entry():
-    if not PAPER_CRYPTO_NATIVE_BRACKET_EXITS:
-        raise HTTPException(409, "Paper Auto Entry locked: verified native BTC protective exits are not supported. No order was submitted.")
     if not _paper_only_configured():
         raise HTTPException(403, "Only the exact Alpaca Paper API host is allowed")
     async with _auto_entry_lock:
