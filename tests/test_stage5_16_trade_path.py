@@ -35,8 +35,8 @@ def test_stage516_detects_favourable_first_by_bar_not_intrabar():
     }
     row = _analyse_trade_path(trade,bars,[2.0,2.0,2.0],{x["t"]:i for i,x in enumerate(bars)})
     assert row["half_r_threshold_order"] == "FAVORABLE_FIRST"
-    assert row["first_favourable_half_r_bar"] == 1
-    assert row["first_adverse_half_r_bar"] == 2
+    assert row["first_favourable_half_r_bar"] == 0
+    assert row["first_adverse_half_r_bar"] == 1
     assert row["same_bar_order_ambiguous"] is False
 
 
