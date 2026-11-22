@@ -214,3 +214,11 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - Entry remains signal-at-5m-close and next-5m-open fill. The existing stop-first OHLC exit model, 0.25% fee-per-side default, and configurable adverse slippage remain assumptions.
 - This is an EMA/RSI/ATR multi-timeframe filter experiment, not a complete ICT implementation. RSI and ATR thresholds are hypotheses and need broader validation.
 - The endpoint is read-only and returns `RESEARCH_ONLY_NOT_CERTIFIED`; it never submits Paper or live orders.
+
+
+## Stage 4.5 — train-only parameter research
+- GET `/api/backtest/stage4-5?timeframe=5Min&limit=10000` runs a predeclared 27-combination grid for relative-volume threshold (1.2/1.5/1.8), pullback tolerance (0.15/0.25/0.40 ATR), and confirmation window (2/4/6 completed 15m bars).
+- Candidate selection uses training data only and requires at least 10 trades, positive net P/L, and net profit factor above 1. If no candidate qualifies, no holdout strategy is selected or evaluated.
+- At most one selected configuration is evaluated on the untouched chronological holdout, with 0/5/10/20 bps slippage sensitivity. This reduces holdout multiple-comparison bias; it does not prove future profitability.
+- Stage 4.4 training boundary is corrected: the training simulation ends before the first holdout candle; holdout fills begin no earlier than the next 5m open.
+- Stage 4.5 is research-only. No Alpaca order/write API is called; Auto Entry remains OFF and Exit Manager remains DISARMED.
