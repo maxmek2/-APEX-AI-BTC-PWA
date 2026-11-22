@@ -545,6 +545,93 @@ async def walk_forward_backtest(
     }
 
 
+@app.get("/api/backtest/rolling-oos")
+async def rolling_oos_backtest(
+    timeframe: str = Query("5Min", pattern="^(1Min|5Min|15Min|1Hour)$"),
+    limit: int = Query(1000, ge=600, le=10000),
+    windows: int = Query(4, ge=3, le=8),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+):
+    """Sequential, fixed-rule out-of-sample windows; read-only and never submits orders."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 600:
+        return {
+            "symbol": "BTC/USD", "status": "insufficient_data",
+            "bars_used": len(bars), "minimum_required": 600,
+            "automated_execution": False, "order_submitted": False,
+            "alpaca_write_api_called": False,
+        }
+
+    first_oos_index = max(21, int(len(bars) * 0.30))
+    available = len(bars) - first_oos_index
+    window_size = available // windows
+    if window_size < 50:
+        raise HTTPException(422, "Not enough candles per out-of-sample window")
+
+    reports = []
+    for window_index in range(windows):
+        start_index = first_oos_index + window_index * window_size
+        end_index = (len(bars) - 1 if window_index == windows - 1
+                     else first_oos_index + (window_index + 1) * window_size - 1)
+        result = run_ema_atr_backtest(
+            bars[:end_index + 1], starting_equity, notional_usd,
+            fee_rate, slippage_bps, start_index=start_index,
+        )
+        trades = result["trades"]
+        first_fill = bars[start_index + 1].get("t")
+        last_time = bars[end_index].get("t")
+        boundary_ok = all(
+            trade.get("entry_time") and first_fill <= trade["entry_time"] <= last_time
+            for trade in trades
+        )
+        reports.append({
+            "window": window_index + 1, "from": first_fill, "to": last_time,
+            "bars": end_index - start_index, "metrics": result["metrics"],
+            "test_starts_flat": True, "entries_inside_window": boundary_ok,
+        })
+
+    all_boundaries_valid = all(item["entries_inside_window"] for item in reports)
+    total_trades = sum(item["metrics"]["trades"] for item in reports)
+    positive_windows = sum(item["metrics"]["net_pnl_usd"] > 0 for item in reports)
+    return {
+        "symbol": "BTC/USD", "timeframe": timeframe,
+        "status": "rolling_out_of_sample_research",
+        "validation": "RESEARCH_ONLY_NOT_CERTIFIED",
+        "bars_used": len(bars), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "method": {
+            "windows": windows, "first_oos_index": first_oos_index,
+            "window_size_approx": window_size,
+            "chronological_non_overlapping": True,
+            "fixed_parameters_no_test_optimization": True,
+            "each_window_starts_flat": True,
+            "indicator_warmup_uses_prior_bars": True,
+            "strategy": "EMA9 > EMA21 and close > EMA9; next-open entry; SL 1.5x ATR14; TP 2.0x ATR14",
+            "fee_per_side_percent": fee_rate * 100,
+            "adverse_slippage_bps_per_side": slippage_bps,
+            "same_candle_policy": "STOP_LOSS_FIRST",
+        },
+        "summary": {
+            "total_trades": total_trades, "positive_windows": positive_windows,
+            "windows": windows, "all_windows_positive": positive_windows == windows,
+            "all_entry_boundaries_valid": all_boundaries_valid,
+        },
+        "window_reports": reports,
+        "limitations": [
+            "OHLC bars cannot establish intrabar execution sequence; ambiguous stop/target bars assume stop first.",
+            "Fees and slippage are assumptions, not measured fills or a verified broker fee schedule.",
+            "Each window starts flat; this is a segmented research comparison, not one continuous portfolio equity curve.",
+            "Positive historical windows do not prove future profitability.",
+        ],
+        "automated_execution": False, "order_submitted": False,
+        "alpaca_write_api_called": False,
+    }
+
+
 # Read-only foundation: no order-submission endpoint is implemented.
 
 
