@@ -299,3 +299,12 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - Holdout signals, trades, regimes and metrics are deliberately not calculated or returned. Holdout remains sealed for a later independent test after a new strategy is frozen.
 - No parameter optimization, selection, promotion, account/order/position calls, order submission or execution-state changes. Auto Entry remains OFF.
 - Findings are descriptive hypotheses only and do not prove causation or profitability.
+
+
+## Frozen candidate — RSI Martingale Grid (research only)
+- The selected candidate is RSI14 > 55 plus the previous completed 5-minute candle bearish, synthetic SHORT direction only.
+- Starting simulation equity $100; first leg $2; 0.5% grid spacing; 2x notional multiplier; maximum two legs; maximum total notional exposure $6; basket take-profit reference 1% below weighted-average short entry.
+- Read-only signal endpoint: GET /api/strategy/martingale-grid. It uses completed 5-minute Alpaca BTC/USD candles only.
+- This endpoint reports a synthetic SHORT setup and grid reference levels. It does not create paper positions, submit broker orders, or enable Auto Entry.
+- Alpaca BTC/USD spot is long-only in this integration; therefore this SHORT Martingale Grid cannot be routed to Alpaca Paper as a real short strategy. It requires a separate short-capable venue or a dedicated synthetic paper ledger before any execution work.
+- This strategy is a preliminary research candidate, not certified profitable. Keep Auto Entry OFF and Exit Manager DISARMED.
