@@ -29,7 +29,7 @@ def test_stage516_detects_favourable_first_by_bar_not_intrabar():
         {"t":"2026-01-01T00:10:00Z","o":101.5,"h":101.6,"l":98,"c":99},
     ]
     trade = {
-        "entry_time": bars[0]["t"], "exit_time": bars[2]["t"],
+        "entry_time": bars[1]["t"], "exit_time": bars[2]["t"],
         "entry_price":100,"exit_price":99,"exit_reason":"STOP_LOSS",
         "gross_pnl_usd":-0.1,"net_pnl_usd":-0.12,
     }
