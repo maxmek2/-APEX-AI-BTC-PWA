@@ -268,3 +268,14 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - At most one candidate that passes every training gate is evaluated on the untouched holdout. If none qualifies, the holdout is not used to select or rescue a candidate.
 - The Stage 4.4 pullback+relative-volume signal now applies the requested relative-volume threshold consistently to both breakout and pullback confirmations.
 - The endpoint uses historical market-data GET only. It does not call Paper account/order/position endpoints, submit orders, enable Auto Entry, or change execution state. Research results do not certify future profitability.
+
+
+## Stage 5.4 — market-regime and walk-forward robustness
+
+- `GET /api/research/stage5-4/run?timeframe=5Min&limit=10000` evaluates the frozen Stage 4.4 pullback+relative-volume baseline without optimizing or selecting parameters.
+- Classifies signal context using the latest fully completed 1h EMA20/EMA50 trend (bull, bear, mixed, unavailable) and completed 15m ATR14/close volatility terciles. Regime attribution is descriptive only, not a rule for cherry-picking trades.
+- Reports chronological 60/40 training and untouched holdout metrics, exit/cost diagnostics, regime attribution, and 3–6 non-overlapping sequential holdout folds.
+- Default assumptions: $100 simulated starting equity, $10 fixed notional, 0.25% fee per side, 5 bps adverse slippage per side, four folds, minimum 10 trades per fold, and a 5% maximum closed-trade drawdown gate.
+- No fold is used to tune or choose parameters. Each fold starts flat. Boundary checks require simulated entries to occur after the fold begins.
+- Historical gates are sample sufficiency and consistency checks, not certification of future profitability. Costs are assumptions, OHLC intrabar path is unknown, and intratrade mark-to-market drawdown is not modeled.
+- Historical market-data GET only. Does not call Paper account/order/position endpoints, submit orders, or change execution state. Auto Entry remains OFF.

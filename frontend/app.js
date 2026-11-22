@@ -107,6 +107,27 @@ async function runStage53(){
  finally{btn.disabled=false;}
 }
 
+
+async function runStage54(){
+ const out=$("stage54-result"),btn=$("run-stage54");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Fetching BTC/USD history and evaluating fixed-strategy chronological regime/fold robustness…";
+ try{
+  const data=await get("/research/stage5-4/run?timeframe=5Min&limit=10000&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&folds=4&minimum_trades_per_fold=10&max_drawdown_percent=5");
+  if(data.status==="INSUFFICIENT_DATA"){out.textContent="Insufficient history: "+escapeLedger(data.bars_used)+" / 5000 minimum candles.";return;}
+  const metrics=(label,m)=>'<h4>'+label+'</h4><div class="backtest-grid">'+ledgerMetric("Trades",m?.trades??0)+ledgerMetric("Net P&L",money(m?.net_pnl_usd),Number(m?.net_pnl_usd)>0)+ledgerMetric("Net PF",m?.net_profit_factor??"—")+ledgerMetric("Win rate",String(m?.win_rate_percent??0)+"%")+ledgerMetric("Closed-trade max DD",String(m?.max_closed_trade_drawdown_percent??m?.max_drawdown_percent??0)+"%")+ledgerMetric("Fees",money(m?.fees_usd))+'</div>';
+  const regimeTable=(items)=>{const rows=Object.entries(items||{}).map(([name,m])=>'<tr><td>'+escapeLedger(name)+'</td><td>'+escapeLedger(m.trades)+'</td><td>'+escapeLedger(m.win_rate_percent)+'%</td><td>'+money(m.net_pnl_usd)+'</td><td>'+escapeLedger(m.net_profit_factor??"—")+'</td></tr>').join("");return '<div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Regime</th><th>Trades</th><th>Win rate</th><th>Net P&amp;L</th><th>Net PF</th></tr></thead><tbody>'+rows+'</tbody></table></div>';};
+  const folds=(data.walk_forward_folds||[]).map(f=>'<tr><td>'+escapeLedger(f.fold)+'</td><td>'+ledgerTime(f.from)+'</td><td>'+ledgerTime(f.to)+'</td><td>'+escapeLedger(f.metrics.trades)+'</td><td>'+money(f.metrics.net_pnl_usd)+'</td><td>'+escapeLedger(f.metrics.net_profit_factor??"—")+'</td><td>'+escapeLedger(f.metrics.max_closed_trade_drawdown_percent)+'%</td><td class="'+(f.entries_after_fold_start?"check-pass":"check-fail")+'">'+(f.entries_after_fold_start?"PASS":"FAIL")+'</td></tr>').join("");
+  const g=data.decision_gates||{},fs=data.fold_summary||{};
+  const gateRows=[["Training gate",g.training_gate],["Holdout gate",g.holdout_gate],["Walk-forward gate",g.walk_forward_gate],["All gates",g.all_gates_passed]].map(([n,v])=>'<div class="check-row"><span>'+n+'</span><strong class="'+(v?"check-pass":"check-fail")+'">'+(v?"PASS":"FAIL")+'</strong></div>').join("");
+  const strategy=data.frozen_strategy||{};
+  const summary='<strong class="'+(g.all_gates_passed?"check-pass":"check-fail")+'">'+escapeLedger(data.status)+'</strong><p>'+escapeLedger(data.symbol)+' · '+escapeLedger(data.bars_used)+'/'+escapeLedger(data.requested_bars)+' candles · '+escapeLedger(fs.fold_count)+' holdout folds</p><small class="muted">'+ledgerTime(data.period?.from)+' → '+ledgerTime(data.period?.to)+' · '+escapeLedger(data.split?.method)+'</small>';
+  const params='<p><strong>Frozen parameters:</strong> Donchian '+strategy.donchian_lookback+' · RelVol '+strategy.relative_volume_threshold+' · Pullback '+strategy.pullback_atr+' ATR / '+strategy.pullback_bars+' bars · Stop '+strategy.stop_atr_multiple+' ATR · R:R '+strategy.reward_risk+'</p>';
+  const foldTable='<h4>Sequential holdout folds</h4><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Fold</th><th>From</th><th>To</th><th>Trades</th><th>Net P&amp;L</th><th>Net PF</th><th>Max DD</th><th>Boundary</th></tr></thead><tbody>'+folds+'</tbody></table></div>';
+  out.innerHTML=summary+params+gateRows+metrics("Training metrics",data.training?.metrics)+regimeTable(data.training?.regime_attribution)+metrics("Untouched holdout metrics",data.holdout?.metrics)+regimeTable(data.holdout?.regime_attribution)+foldTable+'<small class="muted">Regime tables are descriptive and cannot be used to cherry-pick winning regimes. Fixed parameters; no optimization. Cost assumptions are not actual fills. Historical gates are not proof of future profitability. No Paper/order/position endpoints called; no order submitted; Auto Entry remains OFF.</small>';
+ }catch(e){out.textContent="Stage 5.4 unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
+
 async function runStage5Validation(){
  const out=$("stage5-result"),btn=$("run-stage5");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Reading Paper account, positions and open orders…";
@@ -136,6 +157,7 @@ function setupControls(){
  $("run-backtest").addEventListener("click",runBacktest);
  const s51=$("run-stage51");if(s51)s51.addEventListener("click",runStage51Ledger);
  const s53=$("run-stage53");if(s53)s53.addEventListener("click",runStage53);
+ const s54=$("run-stage54");if(s54)s54.addEventListener("click",runStage54);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
