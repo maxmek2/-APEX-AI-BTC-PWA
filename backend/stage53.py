@@ -55,7 +55,7 @@ def run_stage53_report(
         raise ValueError("Insufficient chronological training or holdout data")
     first_holdout_fill = bars[split + 1].get("t")
 
-    # Predeclared, bounded grid: 72 combinations. All ranking and qualification
+    # Predeclared, bounded grid: 108 combinations. All ranking and qualification
     # use training metrics only; holdout is never used to choose parameters.
     grid = list(product(
         (1.2, 1.5, 1.8),
