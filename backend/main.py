@@ -280,7 +280,10 @@ def _backtest_exit_for_candle(position: dict, candle: dict) -> tuple[float, str]
 
 def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
                          notional_usd: float = 10.0, fee_rate: float = 0.0025,
-                         slippage_bps: float = 0.0, start_index: int = 21) -> dict:
+                         slippage_bps: float = 0.0, start_index: int = 21,
+                         fast_period: int = 9, slow_period: int = 21,
+                         stop_atr_multiple: float = 1.5,
+                         reward_risk: float = 2.0) -> dict:
     """Deterministic long-only close-signal/next-open-fill OHLC backtest.
 
     Fees apply to executed notional on entry and exit. Slippage is an adverse
@@ -288,15 +291,20 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
     """
     if len(bars) < 50:
         raise ValueError("At least 50 candles are required")
-    if not isinstance(start_index, int) or start_index < 21 or start_index >= len(bars) - 1:
-        raise ValueError("start_index must be an integer from 21 through len(bars)-2")
+    if (not isinstance(fast_period, int) or not isinstance(slow_period, int)
+            or fast_period < 2 or slow_period <= fast_period or slow_period > 200):
+        raise ValueError("EMA periods must be integers with 2 <= fast < slow <= 200")
+    if stop_atr_multiple <= 0 or reward_risk <= 0:
+        raise ValueError("ATR stop multiple and reward/risk must be positive")
+    if not isinstance(start_index, int) or start_index < slow_period or start_index >= len(bars) - 1:
+        raise ValueError("start_index must be an integer from slow_period through len(bars)-2")
     if starting_equity <= 0 or notional_usd <= 0 or fee_rate < 0 or slippage_bps < 0:
         raise ValueError("Equity/notional must be positive; fee and slippage must be non-negative")
     slip = slippage_bps / 10000.0
     if slip >= 1:
         raise ValueError("Slippage must be below 10000 basis points")
     closes = [float(item["c"]) for item in bars]
-    fast, slow, volatility = ema_series(closes, 9), ema_series(closes, 21), atr_series(bars, 14)
+    fast, slow, volatility = ema_series(closes, fast_period), ema_series(closes, slow_period), atr_series(bars, 14)
     position, trades = None, []
 
     def close_position(candle: dict, exit_price: float, reason: str) -> None:
@@ -337,7 +345,7 @@ def run_ema_atr_backtest(bars: list[dict], starting_equity: float = 100.0,
         entry = reference_entry * (1.0 + slip)
         position = {"entry": entry, "reference_entry": reference_entry,
                     "quantity": notional_usd/entry,
-                    "stop": entry-1.5*a, "target": entry+2.0*a,
+                    "stop": entry-stop_atr_multiple*a, "target": entry+stop_atr_multiple*reward_risk*a,
                     "entry_time": entry_bar.get("t")}
         # Evaluate high/low occurring after the next-open fill on this same candle.
         hit = _backtest_exit_for_candle(position, entry_bar)
@@ -540,6 +548,126 @@ async def walk_forward_backtest(
             "test_parameters_untuned": True,
         },
         "interpretation": "Research diagnostic only. One chronological holdout is not proof of robustness; repeat across market regimes and walk-forward windows before considering strategy validation.",
+        "automated_execution": False, "order_submitted": False,
+        "alpaca_write_api_called": False,
+    }
+
+
+@app.get("/api/backtest/optimize")
+async def optimize_backtest(
+    timeframe: str = Query("5Min", pattern="^(1Min|5Min|15Min|1Hour)$"),
+    limit: int = Query(1000, ge=600, le=10000),
+    train_fraction: float = Query(0.60, gt=0.50, lt=0.80),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+):
+    """Select fixed strategy parameters on training data; evaluate once on untouched holdout."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 600:
+        return {
+            "symbol": "BTC/USD", "status": "insufficient_data",
+            "bars_used": len(bars), "minimum_required": 600,
+            "automated_execution": False, "order_submitted": False,
+            "alpaca_write_api_called": False,
+        }
+
+    split = int(len(bars) * train_fraction)
+    if split <= 51 or len(bars) - split < 50:
+        raise HTTPException(422, "Insufficient candles for training and untouched holdout")
+    candidates = []
+    for fast_period, slow_period in ((9, 21), (12, 26), (20, 50)):
+        for stop_multiple in (1.5, 2.0):
+            for reward_risk in (1.5, 2.0, 2.5):
+                train = run_ema_atr_backtest(
+                    bars[:split + 1], starting_equity, notional_usd,
+                    fee_rate, slippage_bps, start_index=slow_period,
+                    fast_period=fast_period, slow_period=slow_period,
+                    stop_atr_multiple=stop_multiple, reward_risk=reward_risk,
+                )
+                candidates.append({
+                    "parameters": {
+                        "ema_fast": fast_period, "ema_slow": slow_period,
+                        "atr_stop_multiple": stop_multiple, "reward_risk": reward_risk,
+                    },
+                    "training_metrics": train["metrics"],
+                })
+
+    eligible = [item for item in candidates if item["training_metrics"]["trades"] >= 1]
+    selected = max(
+        eligible,
+        key=lambda item: item["training_metrics"]["net_pnl_usd"],
+    ) if eligible else None
+
+    holdout = None
+    cost_sensitivity = []
+    boundary_ok = None
+    if selected:
+        params = selected["parameters"]
+        for cost_bps in sorted({0, 5, 10, 20, slippage_bps}):
+            test = run_ema_atr_backtest(
+                bars, starting_equity, notional_usd, fee_rate, cost_bps,
+                start_index=split, fast_period=params["ema_fast"],
+                slow_period=params["ema_slow"],
+                stop_atr_multiple=params["atr_stop_multiple"],
+                reward_risk=params["reward_risk"],
+            )
+            first_test_fill = bars[split + 1].get("t")
+            test_entries = [trade for trade in test["trades"] if trade.get("entry_time")]
+            entries_valid = all(
+                trade["entry_time"] and trade["entry_time"] >= first_test_fill
+                for trade in test_entries
+            )
+            cost_sensitivity.append({
+                "slippage_bps_per_side": cost_bps,
+                "metrics": test["metrics"],
+                "test_entries_after_split": entries_valid,
+            })
+            if cost_bps == slippage_bps:
+                holdout = test["metrics"]
+                boundary_ok = entries_valid
+
+    return {
+        "symbol": "BTC/USD", "timeframe": timeframe,
+        "status": "train_selected_untouched_holdout_evaluation",
+        "validation": "RESEARCH_ONLY_NOT_CERTIFIED",
+        "bars_used": len(bars), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "split": {
+            "method": "chronological", "train_fraction": train_fraction,
+            "training_bars": split + 1, "holdout_bars": len(bars) - split - 1,
+            "train_to": bars[split].get("t"),
+            "first_possible_holdout_fill": bars[split + 1].get("t"),
+            "holdout_to": bars[-1].get("t"),
+        },
+        "search_space": {
+            "candidate_count": len(candidates),
+            "ema_pairs": [[9, 21], [12, 26], [20, 50]],
+            "atr_stop_multiples": [1.5, 2.0],
+            "reward_risk_values": [1.5, 2.0, 2.5],
+            "selection_rule": "highest training net PnL among candidates with at least one training trade",
+            "holdout_used_for_selection": False,
+        },
+        "training_candidates": candidates,
+        "selected_parameters": selected["parameters"] if selected else None,
+        "selected_training_metrics": selected["training_metrics"] if selected else None,
+        "untouched_holdout_metrics": holdout,
+        "cost_sensitivity": cost_sensitivity,
+        "checks": {
+            "chronological_split": True,
+            "holdout_parameters_untuned": True,
+            "holdout_entries_after_split": boundary_ok,
+            "candidate_selection_used_training_only": True,
+        },
+        "limitations": [
+            "The small fixed candidate grid can still overfit the training sample; an untouched holdout is not independent future validation.",
+            "The selected parameters are not certified profitable; no parameter search can guarantee future results.",
+            "Costs are assumptions, not verified broker fees or measured fills.",
+            "OHLC bars cannot establish intrabar path; ambiguous stop/target bars assume stop first.",
+            "Drawdown is based on closed trades and excludes intratrade mark-to-market drawdown.",
+        ],
         "automated_execution": False, "order_submitted": False,
         "alpaca_write_api_called": False,
     }
