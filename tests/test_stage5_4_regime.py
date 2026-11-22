@@ -47,3 +47,15 @@ def test_stage54_requires_enough_data():
     import pytest
     with pytest.raises(ValueError,match="5000 bars"):
         run_stage54_report(bars(3000))
+
+
+
+def test_stage54_fold_ledgers_do_not_cross_boundaries():
+    data=bars()
+    report=run_stage54_report(data,folds=4,minimum_trades_per_fold=3)
+    assert len(report["walk_forward_folds"])==4
+    for fold in report["walk_forward_folds"]:
+        assert fold["metrics"]["trades"] >= 0
+        assert fold["entries_after_fold_start"] is True
+        for trade in fold["regime_attribution"].values():
+            assert trade["ending_equity_usd"] >= 0
