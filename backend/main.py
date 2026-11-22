@@ -2426,3 +2426,84 @@ try:
 except ImportError:
     from stage5_ops import router as stage5_ops_router
 app.include_router(stage5_ops_router)
+
+
+@app.get("/api/research/stage5-1/run")
+async def stage51_run_real_backtest(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(10000, ge=3000, le=30000),
+    train_fraction: float = Query(0.60, ge=0.50, le=0.80),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+    minimum_trades: int = Query(30, ge=10, le=500),
+):
+    """Run frozen Stage 4.4 variants on real fetched history with chronological train/holdout."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 3000:
+        return {
+            "stage": "5.1", "result": "INSUFFICIENT_DATA",
+            "bars_used": len(bars), "minimum_bars": 3000,
+            "broker_api_called": False, "order_submitted": False,
+        }
+    try:
+        report = run_stage44_report(
+            bars, train_fraction=train_fraction,
+            starting_equity=starting_equity, notional_usd=notional_usd,
+            fee_rate=fee_rate, slippage_bps=slippage_bps,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    def gate(metrics: dict) -> bool:
+        pf = metrics.get("net_profit_factor", metrics.get("profit_factor"))
+        pf_ok = pf == "infinite" or (isinstance(pf, (int, float)) and pf > 1)
+        return (
+            int(metrics.get("trades", 0)) >= minimum_trades
+            and float(metrics.get("net_pnl_usd", 0)) > 0
+            and pf_ok
+        )
+
+    evaluated = {}
+    for name, item in report["reports"].items():
+        train_metrics = item["training_metrics"]
+        holdout_metrics = item["holdout_metrics"]
+        train_pass = gate(train_metrics)
+        holdout_pass = gate(holdout_metrics) and train_pass and item["holdout_entries_after_split"]
+        evaluated[name] = {
+            **item,
+            "training_gate_passed": train_pass,
+            "holdout_gate_passed": holdout_pass,
+            "validated": train_pass and holdout_pass,
+        }
+    validated_count = sum(x["validated"] for x in evaluated.values())
+    return {
+        "stage": "5.1",
+        "status": "LIVE_DATA_READ_ONLY_BACKTEST",
+        "result": "RESEARCH_GATE_PASSED" if validated_count else "NOT_VALIDATED",
+        "symbol": "BTC/USD",
+        "timeframe": timeframe,
+        "bars_used": len(bars),
+        "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data,
+        "data_pages_fetched": data_pages,
+        "period": {"from": bars[0].get("t"), "to": bars[-1].get("t")},
+        "train_fraction": train_fraction,
+        "minimum_trades_per_segment": minimum_trades,
+        "variants": evaluated,
+        "validated_variant_count": validated_count,
+        "selection_policy": "All four frozen Stage 4.4 variants evaluated; no parameter search or holdout-based selection.",
+        "limitations": [
+            "Alpaca historical market-data GET only; no account, order, or position API calls.",
+            "Fees and slippage are modelling assumptions, not verified fills.",
+            "Each holdout run is a separate flat-start segment; it is not a continuous portfolio simulation.",
+            "A passing historical gate is not proof of future profitability or authorization for execution.",
+        ],
+        "broker_api_called": False,
+        "market_data_api_read": True,
+        "order_submitted": False,
+        "alpaca_write_api_called": False,
+        "automated_execution": False,
+    }
