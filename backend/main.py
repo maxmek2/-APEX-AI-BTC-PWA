@@ -1443,12 +1443,13 @@ async def _exit_manager_tick():
             # Persist risk levels before monitoring price. Restart still forces disarm.
             _persist_runtime_state()
 
-        trade = await get_json(
-            f"{DATA}/v1beta3/crypto/us/latest/trades",
+        quote_data = await get_json(
+            f"{DATA}/v1beta3/crypto/us/latest/quotes",
             {"symbols": "BTC/USD"}
         )
-        latest = trade.get("trades", {}).get("BTC/USD")
-        price = float(latest.get("p")) if latest and latest.get("p") is not None else 0
+        latest = quote_data.get("quotes", {}).get("BTC/USD")
+        # Long positions exit by selling: trigger from executable bid, not last trade.
+        price = float(latest.get("bp")) if latest and latest.get("bp") is not None else 0
         _exit_manager["last_price"] = price or None
         checked_at = datetime.now(timezone.utc)
         _exit_manager["last_check"] = checked_at.isoformat()
