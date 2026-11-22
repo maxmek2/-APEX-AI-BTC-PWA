@@ -177,8 +177,9 @@ def run_stage53_report(
         "stage": "5.3",
         "status": "TRAIN_ONLY_OPTIMIZATION_AND_TRADE_DIAGNOSTICS",
         "result": (
-            "CANDIDATE_FOUND_HOLDOUT_PENDING" if selected
-            else "NO_TRAINING_QUALIFIED_CANDIDATE"
+            "NO_TRAINING_QUALIFIED_CANDIDATE" if not selected
+            else "RESEARCH_GATES_PASSED_NOT_CERTIFIED" if holdout and holdout["gate_passed"]
+            else "HOLDOUT_GATE_FAILED"
         ),
         "bars_used": len(bars),
         "split": {
