@@ -104,7 +104,7 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 
 - Every `/api/paper/*` route plus the private `/api/account` and `/api/positions` reads requires `Authorization: Bearer <token>`.
 - Set a long, random `APEX_API_TOKEN` environment variable on the Render backend service before using Paper status or preview features. If it is missing, Paper routes fail closed with HTTP 503; an invalid/missing browser token returns HTTP 401.
-- In the PWA Settings, enter the same token in **Paper API access token**. It is held in browser session storage and is not committed to frontend JavaScript. Never enter Alpaca API credentials in the PWA.
+- In the PWA Settings, enter the same token in **Paper API access token**. The optional **Remember on this device** setting stores it in that browser's local storage; turn it off on shared devices. The token is not committed to frontend JavaScript. Never enter Alpaca API credentials in the PWA.
 - Keep Auto Entry OFF and Exit Manager DISARMED. This token protects access; it does not authorize or activate execution by itself.
 - The API token is a shared bearer secret. Rotate it in Render and update the PWA session entry if it is exposed. For production-grade multi-user access, replace the shared token with a proper login/session system and rate limiting.
 
@@ -257,3 +257,14 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - GET `/api/research/final-readiness` consolidates the local safety audit and existing Stage 6 readiness gates.
 - The endpoint is assessment-only and intentionally returns `NOT_READY` until extended-history research results, paper lifecycle evidence, protection, security/monitoring and independent authorization gates are completed.
 - It makes no broker API calls, changes no execution state, and cannot enable live trading or submit orders.
+
+
+## Stage 5.3 — Strategy diagnostics and training-only optimization
+
+- `GET /api/research/stage5-3/run?timeframe=5Min&limit=10000` fetches historical BTC/USD market data and returns baseline training/holdout diagnostics plus a predeclared 72-candidate parameter grid.
+- The baseline diagnostics separate training and holdout exit reasons, volatility-regime outcomes, fee/slippage attribution, win rate, holding time and closed-trade drawdown.
+- Candidate parameters vary relative-volume threshold (1.2/1.5/1.8), pullback tolerance (0.15/0.25/0.40 ATR), confirmation window (2/4 bars), stop distance (1.0/1.5/2.0 ATR), and reward/risk (1.5/2.0).
+- Candidate ranking and qualification use training metrics only: at least 30 trades, positive net P/L, net profit factor above 1, and closed-trade drawdown no greater than 5% by default.
+- At most one candidate that passes every training gate is evaluated on the untouched holdout. If none qualifies, the holdout is not used to select or rescue a candidate.
+- The Stage 4.4 pullback+relative-volume signal now applies the requested relative-volume threshold consistently to both breakout and pullback confirmations.
+- The endpoint uses historical market-data GET only. It does not call Paper account/order/position endpoints, submit orders, enable Auto Entry, or change execution state. Research results do not certify future profitability.
