@@ -18,6 +18,7 @@ try:
     from .stage54 import run_stage54_report
     from .stage55 import run_stage55_report
     from .stage56 import run_stage56_failure_report
+    from .stage57 import run_stage57_candidate_report
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
     from stage44 import run_stage44_report, build_stage44_signals
@@ -29,6 +30,7 @@ except ImportError:  # uvicorn main:app with backend as app-dir
     from stage54 import run_stage54_report
     from stage55 import run_stage55_report
     from stage56 import run_stage56_failure_report
+    from stage57 import run_stage57_candidate_report
 
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
@@ -2659,4 +2661,43 @@ async def stage56_training_failure_attribution(
         return report
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+@app.get("/api/research/stage5-7/run")
+async def stage57_hourly_trend_candidate(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(30000, ge=5000, le=30000),
+    train_fraction: float = Query(0.60, ge=0.50, le=0.80),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+    minimum_training_trades: int = Query(30, ge=10, le=500),
+):
+    """Stage 5.7: one fixed hourly-trend candidate; training-only and read-only."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 5000:
+        return {
+            "stage": "5.7", "status": "INSUFFICIENT_DATA",
+            "bars_used": len(bars), "requested_bars": limit,
+            "minimum_bars": 5000, "holdout_accessed": False,
+            "order_submitted": False, "automated_execution": False,
+        }
+    try:
+        report = run_stage57_candidate_report(
+            bars, requested_bars=limit,
+            starting_equity=starting_equity, notional_usd=notional_usd,
+            fee_rate=fee_rate, slippage_bps=slippage_bps,
+            train_fraction=train_fraction,
+            minimum_training_trades=minimum_training_trades,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    report.update({
+        "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": bool(has_more_data),
+        "data_pages_fetched": data_pages,
+        "market_data_api_read": True,
+    })
+    return report
 
