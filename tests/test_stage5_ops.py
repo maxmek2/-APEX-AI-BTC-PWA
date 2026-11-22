@@ -58,3 +58,31 @@ def test_stage54_does_not_expose_secrets(monkeypatch):
     assert result["result"] == "CONFIG_REVIEW_PASS"
     assert result["secret_values_exposed"] is False
     assert "x" * 40 not in str(result)
+
+
+def test_stage51_real_run_uses_frozen_backtest_and_never_writes(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    import backend.main as main_module
+
+    start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    bars = [{
+        "t": (start + timedelta(minutes=5 * i)).isoformat().replace("+00:00", "Z"),
+        "o": 100.0, "h": 101.0, "l": 99.0, "c": 100.0, "v": 10.0,
+    } for i in range(3000)]
+    async def fake_fetch(timeframe, limit):
+        return bars[:limit], False, 1
+    monkeypatch.setattr(main_module, "fetch_backtest_bars", fake_fetch)
+
+    response = client.get("/api/research/stage5-1/run?limit=3000")
+    assert response.status_code == 200
+    result = response.json()
+    assert result["stage"] == "5.1"
+    assert result["bars_used"] == 3000
+    assert result["validated_variant_count"] == 0
+    assert result["result"] == "NOT_VALIDATED"
+    assert result["market_data_api_read"] is True
+    assert result["order_submitted"] is False
+    assert set(result["variants"]) == {
+        "breakout_relvol_1p5", "breakout_pullback",
+        "breakout_pullback_relvol", "breakout_relvol_1p5_1h20_50",
+    }
