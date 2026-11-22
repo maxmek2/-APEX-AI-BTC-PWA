@@ -12,9 +12,13 @@ from statistics import mean, pstdev
 
 try:
     from .stage43 import aggregate_complete_5m, atr_values, run_breakout_backtest, _stamp
+    from .stage44 import build_stage44_signals
+    from .stage57 import build_stage57_candidate_signals
     from .stage55 import audit_bar_integrity
 except ImportError:
     from stage43 import aggregate_complete_5m, atr_values, run_breakout_backtest, _stamp
+    from stage44 import build_stage44_signals
+    from stage57 import build_stage57_candidate_signals
     from stage55 import audit_bar_integrity
 
 
@@ -130,6 +134,20 @@ def run_stage517_log_backtest(
         starting_equity, notional_usd, fee_rate, slippage_bps,
         stop_atr_multiple=STOP_ATR, reward_risk=REWARD_RISK,
     )
+    baseline = build_stage44_signals(
+        train, lookback=20, relative_volume_threshold=1.5,
+        pullback_atr=0.25, pullback_bars=4,
+    )
+    baseline_result = run_breakout_backtest(
+        train, baseline["signals"]["breakout_pullback_relvol"],
+        baseline["atr_by_base"], starting_equity, notional_usd,
+        fee_rate, slippage_bps,
+    )
+    hourly_candidate = build_stage57_candidate_signals(train)
+    hourly_result = run_breakout_backtest(
+        train, hourly_candidate["signals"], hourly_candidate["atr_by_base"],
+        starting_equity, notional_usd, fee_rate, slippage_bps,
+    )
     return {
         "stage": "5.17",
         "status": "TRAINING_LOG_RETURN_BACKTEST_NOT_VALIDATED",
@@ -148,6 +166,11 @@ def run_stage517_log_backtest(
             "diagnostics": built["diagnostics"],
         },
         "metrics": result["metrics"],
+        "comparators": {
+            "frozen_stage44_baseline_metrics": baseline_result["metrics"],
+            "frozen_stage57_hourly_candidate_metrics": hourly_result["metrics"],
+            "same_training_slice_and_cost_assumptions": True,
+        },
         "trade_ledger": result["trades"][-50:],
         "holdout": {"status": "SEALED_NOT_ACCESSED"},
         "limitations": [
