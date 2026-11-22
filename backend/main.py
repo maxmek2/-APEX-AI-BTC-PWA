@@ -605,7 +605,7 @@ async def optimize_backtest(
     boundary_ok = None
     if selected:
         params = selected["parameters"]
-        for cost_bps in (0, 5, 10, 20):
+        for cost_bps in sorted({0, 5, 10, 20, slippage_bps}):
             test = run_ema_atr_backtest(
                 bars, starting_equity, notional_usd, fee_rate, cost_bps,
                 start_index=split, fast_period=params["ema_fast"],
