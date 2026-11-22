@@ -1321,20 +1321,32 @@ def _state_connection():
     )
     return connection
 
+STATE_STORAGE_AVAILABLE = True
+
 def _persist_runtime_state():
-    # Store operational context, but always restart with execution disarmed.
+    # Best-effort local checkpoint. Runtime execution must not depend on an
+    # ephemeral Render filesystem; broker order metadata is the recovery source.
+    global STATE_STORAGE_AVAILABLE
     auto_state = {k: v for k, v in _auto_entry.items() if k != "enabled"}
     exit_state = {k: v for k, v in _exit_manager.items() if k != "armed"}
     now = datetime.now(timezone.utc).isoformat()
-    with _state_connection() as connection:
-        connection.execute(
-            "INSERT INTO runtime_state(state_key,payload,updated_at) VALUES(?,?,?) ON CONFLICT(state_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
-            ("auto_entry", json.dumps(auto_state), now),
-        )
-        connection.execute(
-            "INSERT INTO runtime_state(state_key,payload,updated_at) VALUES(?,?,?) ON CONFLICT(state_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
-            ("exit_manager", json.dumps(exit_state), now),
-        )
+    try:
+        with _state_connection() as connection:
+            connection.execute(
+                "INSERT INTO runtime_state(state_key,payload,updated_at) VALUES(?,?,?) ON CONFLICT(state_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
+                ("auto_entry", json.dumps(auto_state), now),
+            )
+            connection.execute(
+                "INSERT INTO runtime_state(state_key,payload,updated_at) VALUES(?,?,?) ON CONFLICT(state_key) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
+                ("exit_manager", json.dumps(exit_state), now),
+            )
+        STATE_STORAGE_AVAILABLE = True
+        return True
+    except Exception:
+        # Volatile mode: continue in-process, but never assume local state
+        # survived a restart. Startup recovery uses the APEX-tagged broker order.
+        STATE_STORAGE_AVAILABLE = False
+        return False
 
 def _restore_runtime_state():
     try:
@@ -1541,12 +1553,7 @@ async def _exit_manager_loop():
         except Exception as exc:
             _exit_manager["last_event"] = "ERROR: " + str(exc)[:180]
         finally:
-            try:
-                _persist_runtime_state()
-            except Exception as exc:
-                _exit_manager["last_event"] = "STATE_PERSISTENCE_ERROR: " + str(exc)[:120]
-                _auto_entry["enabled"] = False
-                _exit_manager["armed"] = False
+            _persist_runtime_state()
         await asyncio.sleep(5)
 
 @app.on_event("startup")
@@ -1561,15 +1568,42 @@ async def start_exit_manager():
                         if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
             if btc:
                 saved_plan = _auto_entry.get("pending_entry_plan") or {}
+                # If local SQLite vanished, recover the ATR from the unique
+                # APEX client_order_id on the broker-confirmed filled entry.
+                if not (saved_plan.get("symbol") == "BTC/USD" and float(saved_plan.get("atr_14") or 0) > 0):
+                    orders = await _paper_request("GET", "/v2/orders", {"status": "closed", "limit": 100})
+                    position_qty = abs(float(btc.get("qty") or 0))
+                    candidates = []
+                    for order in orders:
+                        cid = str(order.get("client_order_id") or "")
+                        if not cid.startswith("apexbtc-") or str(order.get("symbol", "")).replace("/", "").upper() != "BTCUSD":
+                            continue
+                        parts = cid.split("-")
+                        try:
+                            atr_value = int(parts[-1]) / 100.0
+                            filled_qty = float(order.get("filled_qty") or 0)
+                        except (ValueError, TypeError):
+                            continue
+                        if order.get("side") == "buy" and order.get("status") == "filled" and atr_value > 0 and abs(filled_qty - position_qty) <= max(1e-8, position_qty * 0.001):
+                            candidates.append((str(order.get("filled_at") or order.get("updated_at") or ""), atr_value, order))
+                    if candidates:
+                        _, recovered_atr, recovered_order = sorted(candidates, key=lambda x: x[0])[-1]
+                        saved_plan = {
+                            "symbol": "BTC/USD", "atr_14": recovered_atr,
+                            "stop_atr_multiple": 1.5, "reward_risk": 2.0,
+                            "client_order_id": recovered_order.get("client_order_id"),
+                            "recovered_from_broker_order": True,
+                        }
+                        _auto_entry["pending_entry_plan"] = saved_plan
                 if saved_plan.get("symbol") == "BTC/USD" and float(saved_plan.get("atr_14") or 0) > 0:
-                    # Auto-entry remains OFF after restart, but restore protection
-                    # for a broker-confirmed open position using its saved signal plan.
+                    # Restore exit monitoring only; Auto Entry always stays OFF after restart.
                     _exit_manager["armed"] = True
                     _exit_manager["position_key"] = None
-                    _exit_manager["last_event"] = "RESTART_RECOVERY_EXIT_MANAGER_REARMED_FROM_SAVED_PLAN"
+                    _exit_manager["last_event"] = "RESTART_RECOVERY_EXIT_MANAGER_REARMED_FROM_BROKER_ORDER" if saved_plan.get("recovered_from_broker_order") else "RESTART_RECOVERY_EXIT_MANAGER_REARMED_FROM_SAVED_PLAN"
                     _persist_runtime_state()
                 else:
-                    _exit_manager["last_event"] = "RESTART_RECOVERY_BLOCKED_NO_SAVED_RISK_PLAN"
+                    _exit_manager["last_event"] = "RESTART_RECOVERY_BLOCKED_NO_APEX_RISK_PLAN"
+                    _auto_entry["enabled"] = False
         except Exception as exc:
             _exit_manager["last_event"] = "STARTUP_RECONCILIATION_FAILED: " + str(exc)[:120]
     _exit_task = asyncio.create_task(_exit_manager_loop())
@@ -1886,7 +1920,13 @@ async def _auto_entry_tick():
             _auto_entry["last_signal_bar"] = bar_time
             # Persist the signal-time risk plan before placing the Paper order.
             # Use a deterministic client_order_id to help reconcile ambiguous submits.
-            client_order_id = "apexbtc-" + hashlib.sha256(str(bar_time).encode("utf-8")).hexdigest()[:24]
+            # Encode signal ATR (in cents) in the broker order ID so a filled
+            # APEX order can reconstruct its SL/TP plan after ephemeral storage loss.
+            atr_cents = int(round(volatility * 100))
+            if atr_cents <= 0 or atr_cents > 999999:
+                _auto_entry["last_event"] = "BLOCKED_ATR_OUT_OF_RECOVERY_RANGE"
+                return
+            client_order_id = "apexbtc-" + hashlib.sha256(str(bar_time).encode("utf-8")).hexdigest()[:24] + "-" + str(atr_cents)
             _auto_entry["pending_entry_plan"] = {
                 "symbol": "BTC/USD", "client_order_id": client_order_id,
                 "signal_bar_time": bar_time, "atr_14": volatility,
@@ -1920,7 +1960,9 @@ async def auto_entry_status():
         "one_open_btc_position_max": True,
         "order_submission_enabled": bool(_auto_entry["enabled"] and _paper_only_configured()),
         "apex_managed_exits_enabled": PAPER_APEX_MANAGED_EXITS,
-        "warning": "Paper-only. APEX calculates SL/TP and polls exits; server downtime, network failure and slippage can delay exits. Not native broker protection."
+        "state_storage_available": STATE_STORAGE_AVAILABLE,
+        "state_storage_mode": "local_checkpoint_with_broker_order_recovery" if STATE_STORAGE_AVAILABLE else "volatile_runtime_with_broker_order_recovery",
+        "warning": "Paper-only. APEX calculates SL/TP and polls exits; broker order ID carries the ATR recovery value if local storage disappears. Server downtime, network failure and slippage can still delay exits; this is not native broker protection."
     }
 
 @app.post("/api/paper/auto-entry/enable")
