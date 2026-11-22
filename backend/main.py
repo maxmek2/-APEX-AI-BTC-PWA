@@ -2310,3 +2310,34 @@ async def research_safety_audit():
         "order_submitted": False,
         "note": "This checks local configuration only. It does not inspect broker positions, open orders, fills, secrets, or Render availability.",
     }
+
+
+@app.get("/api/research/final-readiness")
+async def final_readiness_review():
+    """Stage 5.0 final review; assessment only and permanently non-enabling."""
+    safety = await research_safety_audit()
+    live_review = await live_trading_readiness()
+    return {
+        "stage": "5.0",
+        "status": "FINAL_READINESS_REVIEW",
+        "result": "NOT_READY",
+        "readiness_percent": live_review["readiness_percent"],
+        "gates_passed": live_review["gates_passed"],
+        "gates_total": live_review["gates_total"],
+        "gates": live_review["gates"],
+        "research_validation": {
+            "stage4_4": "RESEARCH_ONLY_NOT_CERTIFIED",
+            "stage4_5": "REQUIRES_DEPLOYED_DATA_RUN_AND_REVIEW",
+            "stage4_6": "REQUIRES_EXTENDED_HISTORY_WALK_FORWARD_RUN_AND_REVIEW",
+            "stage4_7": "REQUIRES_BOOTSTRAP_OUTPUT_AND_REVIEW",
+            "stage4_8": "ONE_SHOT_SHADOW_SNAPSHOT_ONLY",
+            "stage4_9_safety_audit": safety["result"],
+        },
+        "paper_auto_entry_enabled": live_review["paper_auto_entry_enabled"],
+        "paper_exit_manager_armed": live_review["paper_exit_manager_armed"],
+        "live_trading_supported": False,
+        "live_orders_enabled": False,
+        "broker_api_called": False,
+        "order_submitted": False,
+        "note": "This final review does not certify profitability, does not inspect broker positions/orders, does not activate Paper execution, and cannot enable live trading.",
+    }
