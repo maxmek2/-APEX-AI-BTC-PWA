@@ -1750,18 +1750,25 @@ async def _auto_entry_tick():
             positions = await _paper_request("GET", "/v2/positions")
             btc = next((p for p in positions if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
             if btc:
-                # Fail closed on partial fills or residual entry orders. Do not
-                # manage a position while an entry order may still be filling.
+                # Cancel any unfilled remainder of a partially-filled market entry,
+                # then protect the broker-confirmed filled quantity.
                 pending_orders = await _paper_request("GET", "/v2/orders", {"status": "open", "limit": 100})
-                if any(str(o.get("symbol", "")).replace("/", "").upper() == "BTCUSD" for o in pending_orders):
-                    _auto_entry["last_event"] = "PARTIAL_FILL_OR_OPEN_ORDER_REQUIRES_RECONCILIATION"
+                btc_orders = [o for o in pending_orders if str(o.get("symbol", "")).replace("/", "").upper() == "BTCUSD"]
+                for pending in btc_orders:
+                    if pending.get("id"):
+                        await _paper_request("DELETE", f"/v2/orders/{pending['id']}")
+                plan = _auto_entry.get("pending_entry_plan") or {}
+                if not (plan.get("symbol") == "BTC/USD" and float(plan.get("atr_14") or 0) > 0):
                     _auto_entry["enabled"] = False
+                    _auto_entry["last_event"] = "BLOCKED_OPEN_POSITION_WITHOUT_SAVED_RISK_PLAN"
+                    _exit_manager["last_event"] = "MANUAL_INTERVENTION_REQUIRED_NO_SAVED_RISK_PLAN"
                     return
                 if not _exit_manager["armed"]:
                     _exit_manager.update({
                         "armed": True, "position_key": None, "entry_price": None,
-                        "stop_price": None, "target_price": None,
-                        "last_event": "AUTO_ARMED_FOR_EXISTING_BTC_POSITION", "close_order_id": None
+                        "stop_price": None, "target_price": None, "close_order_id": None,
+                        "close_reason": None,
+                        "last_event": "AUTO_ARMED_FOR_FILLED_BTC_POSITION"
                     })
                 _auto_entry["last_event"] = "POSITION_OPEN_EXIT_MANAGER_ACTIVE"
                 return
