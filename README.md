@@ -194,3 +194,13 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - The candidate grid is intentionally small, but training selection can still overfit. The holdout is not independent future validation and cannot certify profitability.
 - Drawdown in the underlying backtest is closed-trade drawdown; intratrade mark-to-market drawdown is not yet modelled.
 - The endpoint is read-only: historical data GET requests only, no Paper or live order submissions.
+
+
+## Stage 4.2 — Multi-timeframe and entry-filter research
+
+- `GET /api/backtest/stage4-2?timeframe=5Min&limit=2000` compares five predeclared long-only variants: baseline EMA9/EMA21, completed 15m+1h EMA trend confirmation, Wilder RSI14 50–70, ATR14/close minimum 0.04%, and the combined filters.
+- Higher-timeframe candles are aggregated from complete 5m groups only. A partial 15m or 1h candle is never used for its own signal, preventing higher-timeframe intrabar look-ahead.
+- Each variant is reported separately on a chronological training segment and untouched later holdout. Filter settings are fixed in advance and are not selected or tuned on holdout.
+- Entry remains signal-at-5m-close and next-5m-open fill. The existing stop-first OHLC exit model, 0.25% fee-per-side default, and configurable adverse slippage remain assumptions.
+- This is an EMA/RSI/ATR multi-timeframe filter experiment, not a complete ICT implementation. RSI and ATR thresholds are hypotheses and need broader validation.
+- The endpoint is read-only and returns `RESEARCH_ONLY_NOT_CERTIFIED`; it never submits Paper or live orders.
