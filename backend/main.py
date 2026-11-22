@@ -2282,3 +2282,62 @@ def _stamp_bar_end(bar: dict, seconds: int) -> datetime:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value + timedelta(seconds=seconds)
+
+
+@app.get("/api/research/safety-audit")
+async def research_safety_audit():
+    """Local configuration audit only; no broker API calls and no state changes."""
+    auto_entry_enabled = bool(_auto_entry.get("enabled", False))
+    exit_manager_armed = bool(_exit_manager.get("armed", False))
+    paper_host_verified = _paper_only_configured()
+    controls_safe = not auto_entry_enabled and not exit_manager_armed
+    result = "SAFE_FOR_READ_ONLY_RESEARCH" if paper_host_verified and controls_safe else "REQUIRES_REVIEW"
+    return {
+        "stage": "4.9",
+        "result": result,
+        "checks": {
+            "paper_host_allowlisted": paper_host_verified,
+            "paper_auto_entry_off": not auto_entry_enabled,
+            "paper_exit_manager_disarmed": not exit_manager_armed,
+            "live_trading_supported": False,
+            "live_orders_enabled": False,
+            "audit_is_read_only": True,
+        },
+        "paper_auto_entry_enabled": auto_entry_enabled,
+        "paper_exit_manager_armed": exit_manager_armed,
+        "broker_api_called": False,
+        "broker_write_api_called": False,
+        "order_submitted": False,
+        "note": "This checks local configuration only. It does not inspect broker positions, open orders, fills, secrets, or Render availability.",
+    }
+
+
+@app.get("/api/research/final-readiness")
+async def final_readiness_review():
+    """Stage 5.0 final review; assessment only and permanently non-enabling."""
+    safety = await research_safety_audit()
+    live_review = await live_trading_readiness()
+    return {
+        "stage": "5.0",
+        "status": "FINAL_READINESS_REVIEW",
+        "result": "NOT_READY",
+        "readiness_percent": live_review["readiness_percent"],
+        "gates_passed": live_review["gates_passed"],
+        "gates_total": live_review["gates_total"],
+        "gates": live_review["gates"],
+        "research_validation": {
+            "stage4_4": "RESEARCH_ONLY_NOT_CERTIFIED",
+            "stage4_5": "REQUIRES_DEPLOYED_DATA_RUN_AND_REVIEW",
+            "stage4_6": "REQUIRES_EXTENDED_HISTORY_WALK_FORWARD_RUN_AND_REVIEW",
+            "stage4_7": "REQUIRES_BOOTSTRAP_OUTPUT_AND_REVIEW",
+            "stage4_8": "ONE_SHOT_SHADOW_SNAPSHOT_ONLY",
+            "stage4_9_safety_audit": safety["result"],
+        },
+        "paper_auto_entry_enabled": live_review["paper_auto_entry_enabled"],
+        "paper_exit_manager_armed": live_review["paper_exit_manager_armed"],
+        "live_trading_supported": False,
+        "live_orders_enabled": False,
+        "broker_api_called": False,
+        "order_submitted": False,
+        "note": "This final review does not certify profitability, does not inspect broker positions/orders, does not activate Paper execution, and cannot enable live trading.",
+    }

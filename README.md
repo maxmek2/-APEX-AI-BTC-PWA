@@ -245,3 +245,15 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - Returns the latest completed candle, most recent observed setup, signal age/freshness, and diagnostics.
 - This is a one-shot snapshot, not a continuously running monitor or persistent signal log.
 - It does not access Paper account controls, create positions, submit orders, or arm the Exit Manager. `paper_order_enabled`, `order_submitted`, and `alpaca_write_api_called` remain false.
+
+
+## Stage 4.9 — local execution safety audit
+- GET `/api/research/safety-audit` checks the configured broker host allow-list, Paper Auto Entry state, and Exit Manager armed state.
+- It makes no broker API calls and changes no state. It does not verify broker positions, open orders, fills, secret quality, Render uptime, or deployment configuration.
+- The endpoint always reports live trading and live orders as unsupported/disabled. A safe local configuration is not certification for Paper or live execution.
+
+
+## Stage 5.0 — final readiness review
+- GET `/api/research/final-readiness` consolidates the local safety audit and existing Stage 6 readiness gates.
+- The endpoint is assessment-only and intentionally returns `NOT_READY` until extended-history research results, paper lifecycle evidence, protection, security/monitoring and independent authorization gates are completed.
+- It makes no broker API calls, changes no execution state, and cannot enable live trading or submit orders.
