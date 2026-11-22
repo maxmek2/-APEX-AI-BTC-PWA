@@ -9,13 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 try:
     from .stage43 import build_breakout_signals, run_breakout_backtest
-    from .stage44 import run_stage44_report
+    from .stage44 import run_stage44_report, build_stage44_signals
     from .stage45 import run_stage45_report
     from .stage46 import run_stage46_report
     from .stage47 import run_stage47_report
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
-    from stage44 import run_stage44_report
+    from stage44 import run_stage44_report, build_stage44_signals
     from stage45 import run_stage45_report
     from stage46 import run_stage46_report
     from stage47 import run_stage47_report
@@ -2217,3 +2217,68 @@ async def stage47_bootstrap_research(
         "order_submitted": False,
         "alpaca_write_api_called": False,
     }
+
+
+@app.get("/api/paper/shadow-snapshot")
+async def paper_shadow_snapshot(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(3000, ge=3000, le=10000),
+):
+    """Read-only one-shot shadow snapshot; observes signals but never submits orders."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    completed = _completed_bars(bars, "5Min")
+    if len(completed) < 1000:
+        return {
+            "symbol": "BTC/USD", "status": "insufficient_completed_data",
+            "bars_used": len(completed), "minimum_required": 1000,
+            "shadow_only": True, "order_submitted": False,
+            "alpaca_write_api_called": False,
+        }
+    built = build_stage44_signals(
+        completed, lookback=20, relative_volume_threshold=1.5,
+        pullback_atr=0.25, pullback_bars=4,
+    )
+    mask = built["signals"]["breakout_pullback_relvol"]
+    signal_indices = [i for i, active in enumerate(mask) if active]
+    now = datetime.now(timezone.utc)
+    latest_signal = None
+    if signal_indices:
+        index = signal_indices[-1]
+        signal_bar = completed[index]
+        signal_close = _stamp_bar_end(signal_bar, 300)
+        age = (now - signal_close).total_seconds()
+        latest_signal = {
+            "signal": "LONG_SETUP",
+            "signal_bar_open_time": signal_bar.get("t"),
+            "signal_close_time": signal_close.isoformat().replace("+00:00", "Z"),
+            "age_seconds": round(age, 1),
+            "fresh": 0 <= age <= 1200,
+        }
+    status = (
+        "SHADOW_SIGNAL_OBSERVED" if latest_signal and latest_signal["fresh"]
+        else "STALE_SIGNAL_ONLY" if latest_signal
+        else "NO_SHADOW_SIGNAL"
+    )
+    return {
+        "symbol": "BTC/USD", "status": status,
+        "mode": "READ_ONLY_SHADOW_SNAPSHOT",
+        "strategy": "Stage 4.4 pullback + relative volume baseline",
+        "bars_used": len(completed), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "latest_completed_bar_time": completed[-1].get("t"),
+        "latest_observed_signal": latest_signal,
+        "recent_signal_count": len(signal_indices),
+        "diagnostics": built["diagnostics"],
+        "shadow_only": True,
+        "paper_order_enabled": False,
+        "order_submitted": False,
+        "alpaca_write_api_called": False,
+    }
+
+
+def _stamp_bar_end(bar: dict, seconds: int) -> datetime:
+    value = datetime.fromisoformat(str(bar["t"]).replace("Z", "+00:00"))
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value + timedelta(seconds=seconds)
