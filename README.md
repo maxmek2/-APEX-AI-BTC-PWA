@@ -279,3 +279,13 @@ Paper Auto Entry remains OFF by default and requires explicit authenticated acti
 - No fold is used to tune or choose parameters. Each fold starts flat. Boundary checks require simulated entries to occur after the fold begins.
 - Historical gates are sample sufficiency and consistency checks, not certification of future profitability. Costs are assumptions, OHLC intrabar path is unknown, and intratrade mark-to-market drawdown is not modeled.
 - Historical market-data GET only. Does not call Paper account/order/position endpoints, submit orders, or change execution state. Auto Entry remains OFF.
+
+
+## Stage 5.5 — extended history and cost audit
+
+- `GET /api/research/stage5-5/run?timeframe=5Min&limit=30000` fetches up to 30,000 BTC/USD M5 bars using the existing paginated Alpaca historical market-data reader.
+- Audits timestamp parsing, duplicate/order violations, five-minute grid alignment, OHLC consistency, finite values, nonnegative volume, observed gaps and estimated missing intervals.
+- Replays the frozen Stage 4.4 `breakout_pullback_relvol` baseline with a chronological 60/40 split and fixed $100 equity, $10 notional, 0.25% fee per side and 5 bps slippage per side.
+- Reconciles every simulated trade and aggregate gross P&L, fees, slippage and net P&L. Slippage is already reflected in executed prices and gross P&L, so it is reported but not deducted a second time.
+- Reports the latest 20 training and holdout trades. An audit pass confirms structural and arithmetic checks only; it does not certify profitability.
+- Historical market-data GET only. No account, order, position or execution endpoint; no order submission; Auto Entry remains OFF.
