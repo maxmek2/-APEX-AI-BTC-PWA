@@ -25,13 +25,15 @@ def test_stage51_rejects_unprofitable_holdout():
     assert result["result"] == "NOT_VALIDATED"
 
 
-def test_stage52_models_partial_fill_reject_and_restart():
-    ok = client.post("/api/paper/stage5-2/lifecycle-simulate", json={
+def test_stage52_models_partial_fill_reject_and_restart(monkeypatch):
+    monkeypatch.setenv("APEX_API_TOKEN", "stage5-ops-test-token")
+    headers = {"Authorization": "Bearer stage5-ops-test-token"}
+    ok = client.post("/api/paper/stage5-2/lifecycle-simulate", headers=headers, json={
         "events": ["submitted", "partial_fill", "filled", "exit_requested", "closed"]
     }).json()
     assert ok["state"] == "CLOSED"
     assert ok["order_submitted"] is False
-    bad = client.post("/api/paper/stage5-2/lifecycle-simulate", json={
+    bad = client.post("/api/paper/stage5-2/lifecycle-simulate", headers=headers, json={
         "events": ["submitted", "partial_fill", "restart", "closed"]
     }).json()
     assert bad["result"] == "INVALID_SEQUENCE"
