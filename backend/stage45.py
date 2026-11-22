@@ -7,8 +7,12 @@ Read-only research; no broker or order dependencies.
 from __future__ import annotations
 
 from itertools import product
-from .stage44 import build_stage44_signals
-from .stage43 import run_breakout_backtest
+try:
+    from .stage44 import build_stage44_signals
+    from .stage43 import run_breakout_backtest
+except ImportError:  # uvicorn main:app with backend as app-dir
+    from stage44 import build_stage44_signals
+    from stage43 import run_breakout_backtest
 
 
 def run_stage45_report(
