@@ -1402,6 +1402,28 @@ async def _exit_manager_tick():
 
         qty = float(btc.get("qty") or 0)
         entry = float(btc.get("avg_entry_price") or 0)
+        if _exit_manager.get("close_reason"):
+            # Retry/reconcile a previously triggered close until broker confirms flat.
+            reason = str(_exit_manager["close_reason"])
+            try:
+                await _paper_request("DELETE", "/v2/positions/BTCUSD")
+            except Exception:
+                pass
+            remaining = await _paper_request("GET", "/v2/positions")
+            still_open = next((p for p in remaining
+                if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
+            if still_open:
+                _exit_manager["last_event"] = reason + "_CLOSE_PENDING_RETRY"
+                return
+            _exit_manager.update({
+                "armed": False, "position_key": None, "entry_price": None,
+                "stop_price": None, "target_price": None, "close_order_id": None,
+                "close_reason": None, "last_event": reason + "_POSITION_CLOSED_CONFIRMED"
+            })
+            _auto_entry["enabled"] = False
+            _auto_entry["last_event"] = "AUTO_DISABLED_AFTER_POSITION_EXIT"
+            return
+
         if str(btc.get("side", "")).lower() != "long":
             _exit_manager["last_event"] = "BLOCKED_NON_LONG_POSITION"
             _exit_manager["armed"] = False
@@ -1479,24 +1501,28 @@ async def _exit_manager_tick():
             reason = "TAKE_PROFIT_TRIGGERED"
 
         if reason:
-            # Disarm BEFORE the broker write so a timeout/restart cannot cause
-            # repeated close requests on every five-second poll.
-            _exit_manager["armed"] = False
+            # Keep the manager armed until broker reconciliation confirms flat.
+            # If the close call fails or remains pending, the next tick retries.
+            _exit_manager["close_reason"] = reason
             _exit_manager["last_event"] = reason + "_CLOSE_REQUEST_IN_FLIGHT"
             try:
                 result = await _paper_request("DELETE", "/v2/positions/BTCUSD")
                 _exit_manager["close_order_id"] = result.get("id")
-                # Acceptance is not proof of a flat position. Reconcile broker state.
-                remaining = await _paper_request("GET", "/v2/positions")
-                still_open = next((p for p in remaining
-                    if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
-                if still_open:
-                    _exit_manager["last_event"] = reason + "_CLOSE_ACCEPTED_POSITION_STILL_OPEN_REQUIRES_INSPECTION"
-                else:
-                    _exit_manager["last_event"] = reason + "_POSITION_CLOSED_CONFIRMED"
             except Exception:
-                _exit_manager["last_event"] = reason + "_CLOSE_REQUEST_FAILED_INSPECT_BROKER"
-                raise
+                _exit_manager["last_event"] = reason + "_CLOSE_REQUEST_UNCERTAIN_RECONCILING"
+            remaining = await _paper_request("GET", "/v2/positions")
+            still_open = next((p for p in remaining
+                if str(p.get("symbol", "")).replace("/", "").upper() == "BTCUSD"), None)
+            if still_open:
+                _exit_manager["last_event"] = reason + "_CLOSE_PENDING_RETRY"
+            else:
+                _exit_manager.update({
+                    "armed": False, "position_key": None, "entry_price": None,
+                    "stop_price": None, "target_price": None, "close_order_id": None,
+                    "close_reason": None, "last_event": reason + "_POSITION_CLOSED_CONFIRMED"
+                })
+                _auto_entry["enabled"] = False
+                _auto_entry["last_event"] = "AUTO_DISABLED_AFTER_POSITION_EXIT"
 
 async def _exit_manager_loop():
     while True:
