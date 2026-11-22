@@ -46,7 +46,7 @@ def test_stage42_endpoint_compares_predeclared_filters_without_orders(monkeypatc
 
 
 def test_higher_timeframe_filter_does_not_use_partial_hour_candle():
-    bars = _bars(300)
+    bars = _bars(299)
     before = main.higher_timeframe_bullish_by_index(bars, 60)
     changed = [dict(item) for item in bars]
     changed[-1]["c"] += 10000
