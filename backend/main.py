@@ -13,12 +13,14 @@ try:
     from .stage45 import run_stage45_report
     from .stage46 import run_stage46_report
     from .stage47 import run_stage47_report
+    from .stage48 import run_stage48_report
 except ImportError:  # uvicorn main:app with backend as app-dir
     from stage43 import build_breakout_signals, run_breakout_backtest
     from stage44 import run_stage44_report, build_stage44_signals
     from stage45 import run_stage45_report
     from stage46 import run_stage46_report
     from stage47 import run_stage47_report
+    from stage48 import run_stage48_report
 
 load_dotenv()
 KEY=os.getenv("ALPACA_API_KEY","")
@@ -2340,4 +2342,50 @@ async def final_readiness_review():
         "broker_api_called": False,
         "order_submitted": False,
         "note": "This final review does not certify profitability, does not inspect broker positions/orders, does not activate Paper execution, and cannot enable live trading.",
+    }
+
+
+@app.get("/api/backtest/stage4-8")
+async def stage48_trade_diagnostics(
+    timeframe: str = Query("5Min", pattern="^5Min$"),
+    limit: int = Query(30000, ge=3000, le=30000),
+    starting_equity: float = Query(100, gt=0, le=1000000),
+    notional_usd: float = Query(10, gt=0, le=100000),
+    fee_rate: float = Query(0.0025, ge=0, le=0.02),
+    slippage_bps: float = Query(5, ge=0, le=500),
+):
+    """Stage 4.8 trade failure/cost diagnostics; read-only, no parameter search."""
+    bars, has_more_data, data_pages = await fetch_backtest_bars(timeframe, limit)
+    if len(bars) < 3000:
+        return {
+            "symbol": "BTC/USD", "status": "insufficient_data",
+            "bars_used": len(bars), "minimum_required": 3000,
+            "automated_execution": False, "order_submitted": False,
+            "alpaca_write_api_called": False,
+        }
+    try:
+        result = run_stage48_report(
+            bars, starting_equity, notional_usd, fee_rate, slippage_bps
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {
+        "symbol": "BTC/USD", "timeframe": timeframe,
+        "status": "stage4_8_trade_failure_and_cost_diagnostics",
+        "bars_used": len(bars), "requested_bars": limit,
+        "history_complete_for_request": len(bars) == limit,
+        "has_more_data": has_more_data, "data_pages_fetched": data_pages,
+        "period": {"from": bars[0].get("t"), "to": bars[-1].get("t")},
+        "assumptions": {
+            "starting_equity_usd": starting_equity,
+            "fixed_notional_usd": notional_usd,
+            "fee_per_side_percent": fee_rate * 100,
+            "slippage_bps_per_side": slippage_bps,
+            "signal": "Completed 15m breakout pullback + relative volume >= 1.5",
+            "fill": "Next 5m candle open",
+            "exits": "1.5x ATR stop, 2R target, conservative stop-first OHLC",
+        },
+        **result,
+        "automated_execution": False, "order_submitted": False,
+        "alpaca_write_api_called": False,
     }
