@@ -53,6 +53,38 @@ async function refresh(){
  const failures=results.filter(x=>x.status==="rejected");setStatus(failures.length?"PARTIAL DATA · "+failures.map(x=>x.reason.message).join(" · "):"ACCOUNT CONNECTED · PAPER",failures.length===0);
 }
 async function runBacktest(){const out=$("backtest-result");out.textContent="Running read-only historical simulation…";try{const r=await get("/backtest?timeframe="+selectedTimeframe+"&limit=10000&starting_equity=100&notional_usd=10"),m=r.metrics;if(!m){out.textContent="Backtest status: "+r.status+" · Bars: "+r.bars_used;return;}out.innerHTML='<div class="backtest-grid"><div><small>Ending equity</small><b>'+money(m.ending_equity_usd)+'</b></div><div><small>Net P&amp;L</small><b class="'+(m.net_pnl_usd>=0?"check-pass":"check-fail")+'">'+money(m.net_pnl_usd)+'</b></div><div><small>Trades</small><b>'+m.trades+'</b></div><div><small>Win rate</small><b>'+m.win_rate_percent+'%</b></div><div><small>Gross PF</small><b>'+(m.gross_profit_factor??"—")+'</b></div><div><small>Net PF</small><b>'+(m.net_profit_factor??"—")+'</b></div><div><small>Max drawdown</small><b>'+m.max_drawdown_percent+'%</b></div></div><small class="muted">Historical simulation · '+r.bars_used+' / '+r.requested_bars+' requested candles · '+(r.history_complete_for_request?"requested sample complete":"partial history")+(r.has_more_data?" · older data available":"")+(r.period?" · "+r.period.from+" to "+r.period.to:"")+'</small>'; }catch(e){out.textContent="Backtest unavailable: "+e.message;}}
+function escapeLedger(value){return String(value??"—").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));}
+function ledgerTime(value){if(!value)return "—";const d=new Date(value);return Number.isNaN(d.getTime())?escapeLedger(value):escapeLedger(d.toLocaleString());}
+function ledgerMetric(label,value,positive){const cls=positive==null?"":(positive?"check-pass":"check-fail");return '<div><small>'+escapeLedger(label)+'</small><b class="'+cls+'">'+escapeLedger(value)+'</b></div>';}
+function ledgerTable(rows,label){
+ const items=Array.isArray(rows)?rows:[],shown=items.slice(-12);
+ if(!items.length)return '<p class="muted">'+escapeLedger(label)+': no closed simulated trades in this segment.</p>';
+ const body=shown.map(t=>{const pnl=Number(t.net_pnl_usd);return '<tr><td>'+ledgerTime(t.entry_time)+'</td><td>'+ledgerTime(t.exit_time)+'</td><td>'+money(t.entry_price)+'</td><td>'+money(t.exit_price)+'</td><td>'+escapeLedger(t.exit_reason)+'</td><td>'+money(t.estimated_fees_usd)+'</td><td>'+money(t.estimated_slippage_usd)+'</td><td class="'+(Number.isFinite(pnl)&&pnl>=0?"check-pass":"check-fail")+'">'+money(t.net_pnl_usd)+'</td></tr>';}).join("");
+ return '<details class="ledger-details"><summary>'+escapeLedger(label)+' · '+items.length+' trades'+(items.length>shown.length?' · showing latest '+shown.length:'')+'</summary><div class="ledger-table-wrap"><table class="ledger-table"><thead><tr><th>Entry time</th><th>Exit time</th><th>Entry</th><th>Exit</th><th>Reason</th><th>Fees</th><th>Slippage</th><th>Net P&amp;L</th></tr></thead><tbody>'+body+'</tbody></table></div></details>';
+}
+async function runStage51Ledger(){
+ const out=$("stage51-ledger-result"),btn=$("run-stage51");if(!out||!btn)return;
+ btn.disabled=true;out.textContent="Fetching BTC/USD history and replaying frozen research variants… This is read-only.";
+ try{
+  const data=await get("/research/stage5-1/run?timeframe=5Min&limit=10000&train_fraction=0.60&starting_equity=100&notional_usd=10&fee_rate=0.0025&slippage_bps=5&minimum_trades=30");
+  if(!data.variants){out.textContent="Research status: "+escapeLedger(data.result||data.status||"UNAVAILABLE")+" · Bars: "+escapeLedger(data.bars_used??"—");return;}
+  const cards=Object.entries(data.variants).map(([name,item])=>{
+   const tr=item.training_metrics||{},ho=item.holdout_metrics||{};
+   const status=item.validated?"VALIDATED":"NOT VALIDATED";
+   const cardsHtml='<div class="backtest-grid">'+
+    ledgerMetric("Training trades",tr.trades??0)+ledgerMetric("Training net P&L",money(tr.net_pnl_usd),Number(tr.net_pnl_usd)>=0)+ledgerMetric("Training net PF",tr.net_profit_factor??tr.profit_factor??"—")+
+    ledgerMetric("Holdout trades",ho.trades??0)+ledgerMetric("Holdout net P&L",money(ho.net_pnl_usd),Number(ho.net_pnl_usd)>=0)+ledgerMetric("Holdout net PF",ho.net_profit_factor??ho.profit_factor??"—")+
+    ledgerMetric("Holdout win rate",Number.isFinite(Number(ho.win_rate_percent))?Number(ho.win_rate_percent).toFixed(2)+"%":"—")+
+    '</div>';
+   return '<article class="ledger-variant"><div class="between"><strong>'+escapeLedger(name.replaceAll("_"," "))+'</strong><span class="tag '+(item.validated?"check-pass":"neutral")+'">'+status+'</span></div>'+cardsHtml+
+    '<small class="muted">Training gate: '+(item.training_gate_passed?"PASS":"FAIL")+' · Holdout gate: '+(item.holdout_gate_passed?"PASS":"FAIL")+' · Holdout entries after split: '+(item.holdout_entries_after_split?"YES":"NO")+'</small>'+
+    ledgerTable(item.training_trades,"Training ledger")+ledgerTable(item.holdout_trades,"Holdout ledger")+'</article>';
+  }).join("");
+  const meta='<strong class="'+(data.result==="RESEARCH_GATE_PASSED"?"check-pass":"check-fail")+'">'+escapeLedger(data.result)+'</strong><p>'+escapeLedger(data.symbol)+' · '+escapeLedger(data.timeframe)+' · '+escapeLedger(data.bars_used)+'/'+escapeLedger(data.requested_bars)+' candles · '+escapeLedger(data.validated_variant_count)+'/4 variants validated</p><small class="muted">'+ledgerTime(data.period?.from)+' → '+ledgerTime(data.period?.to)+' · Train '+Math.round(Number(data.train_fraction)*100)+'% / holdout '+Math.round((1-Number(data.train_fraction))*100)+'% · $100 start · $10 notional · 0.25% fee/side · 5 bps slippage/side</small>';
+  out.innerHTML=meta+cards+'<small class="muted">Read-only Alpaca historical market-data GET. No account/order/position API calls; no order submitted; no execution state changed. Simulated OHLC trades are not actual broker fills.</small>';
+ }catch(e){out.textContent="Stage 5.2 ledger unavailable: "+e.message;}
+ finally{btn.disabled=false;}
+}
 async function runStage5Validation(){
  const out=$("stage5-result"),btn=$("run-stage5");if(!out||!btn)return;
  btn.disabled=true;out.textContent="Reading Paper account, positions and open orders…";
@@ -79,6 +111,7 @@ function setupControls(){
  if(tokenInput){tokenInput.value=sessionStorage.getItem("apexPaperToken")||"";tokenInput.addEventListener("change",()=>{sessionStorage.setItem("apexPaperToken",tokenInput.value.trim());loadPaperEngineStatus();});}
  const tf=$("timeframe");tf.addEventListener("change",()=>{selectedTimeframe=tf.value;text("signal-timeframe",labels[selectedTimeframe].toUpperCase());refresh().catch(e=>setStatus(e.message));});
  $("run-backtest").addEventListener("click",runBacktest);
+ const s51=$("run-stage51");if(s51)s51.addEventListener("click",runStage51Ledger);
  const s5=$("run-stage5");if(s5)s5.addEventListener("click",runStage5Validation);
  const s6=$("run-stage6");if(s6)s6.addEventListener("click",runStage6Readiness);
  $("pause-monitor").addEventListener("click",()=>{monitorPaused=!monitorPaused;$("pause-monitor").textContent=monitorPaused?"▶ Resume Monitor":"Ⅱ Pause Monitor";if(!monitorPaused)refresh().catch(e=>setStatus(e.message));});
