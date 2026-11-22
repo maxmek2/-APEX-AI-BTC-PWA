@@ -48,7 +48,7 @@ def test_stage514_blocks_negative_or_under_sampled_candidate():
     entry = {"summary": {"false_breakout_share_percent": 39.53}, "entry_quality_attribution": {}}
     result = _evaluate("test", metrics, cohorts, entry)
     assert result["decision"] == "NO_GO"
-    assert result["gates_passed"] == 0
+    assert result["gates_passed"] == 1  # Only the total-trade-count gate passes.
     assert result["gates"]["minimum_30_training_trades"] is True
     assert result["gates"]["positive_training_net_pnl"] is False
     assert result["gates"]["all_three_cohorts_have_30_trades"] is False
